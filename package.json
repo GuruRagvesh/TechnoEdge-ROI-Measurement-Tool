@@ -4,6 +4,9 @@
   "private": true,
   "scripts": {
     "dev": "next dev --hostname 127.0.0.1",
+    "cloud:setup": "node scripts/run.mjs scripts/cloud-dev.ts setup",
+    "dev:cloud": "node scripts/run.mjs scripts/cloud-dev.ts start",
+    "cloud:otp": "node scripts/run.mjs scripts/cloud-dev.ts otp",
     "build": "next build --webpack",
     "start": "node .next-app/standalone/server.js",
     "typecheck": "tsc --noEmit",

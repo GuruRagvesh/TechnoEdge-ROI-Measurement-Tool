@@ -2,6 +2,11 @@ import type { NextConfig } from "next";
 const config: NextConfig = {
   poweredByHeader: false,
   devIndicators: false,
+  ...(process.env.NODE_ENV !== "production" &&
+  process.env.CODESPACES === "true" &&
+  process.env.APP_URL
+    ? { allowedDevOrigins: [new URL(process.env.APP_URL).hostname] }
+    : {}),
   output: "standalone",
   distDir: process.env.NEXT_DIST_DIR || ".next-app",
   serverExternalPackages: ["exceljs", "proper-lockfile"],

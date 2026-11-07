@@ -1,0 +1,9 @@
+{
+  "name": "TechnoEdge private development",
+  "image": "mcr.microsoft.com/devcontainers/javascript-node:1-22-bookworm",
+  "forwardPorts": [3000],
+  "portsAttributes": {
+    "3000": { "label": "TechnoEdge — keep PRIVATE", "onAutoForward": "notify" }
+  },
+  "postCreateCommand": "npm ci && npm run cloud:setup"
+}

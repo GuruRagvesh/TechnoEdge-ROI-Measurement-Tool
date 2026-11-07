@@ -1,0 +1,141 @@
+{
+  "captured": "2026-11-07",
+  "dataClassification": "synthetic-test",
+  "screens": [
+    {
+      "file": "public-landing",
+      "title": "Public landing page",
+      "path": "/"
+    },
+    {
+      "file": "public-login",
+      "title": "Login — email OTP or private local account",
+      "path": "/login"
+    },
+    {
+      "file": "public-login-mobile",
+      "title": "Mobile login",
+      "path": "/login"
+    },
+    {
+      "file": "host-dashboard",
+      "title": "Host dashboard",
+      "path": "/host"
+    },
+    {
+      "file": "host-create",
+      "title": "Create assessment",
+      "path": "/host/assessments/new"
+    },
+    {
+      "file": "host-manage",
+      "title": "Paired room management",
+      "path": "/host/assessments/4aacae39b3082e265068"
+    },
+    {
+      "file": "host-monitor",
+      "title": "Live monitoring and participants",
+      "path": "/host/rooms/baseline-pre/monitor"
+    },
+    {
+      "file": "host-evaluate",
+      "title": "Practical evaluation",
+      "path": "/host/rooms/baseline-pre/evaluate/DEMO001"
+    },
+    {
+      "file": "host-analytics",
+      "title": "Observed outcomes and modeled ROI",
+      "path": "/host/reports"
+    },
+    {
+      "file": "host-export",
+      "title": "Excel and evidence exports",
+      "path": "/host/reports/export"
+    },
+    {
+      "file": "host-create-mobile",
+      "title": "Mobile assessment creation",
+      "path": "/host/assessments/new"
+    },
+    {
+      "file": "attendee-dashboard",
+      "title": "Personal dashboard",
+      "path": "/attendee"
+    },
+    {
+      "file": "attendee-assessments",
+      "title": "Base Camp and Summit availability",
+      "path": "/attendee/assessments"
+    },
+    {
+      "file": "attendee-join",
+      "title": "Room entry and confirmed join",
+      "path": "/attendee/join"
+    },
+    {
+      "file": "attendee-comparison",
+      "title": "Pre/Post comparison",
+      "path": "/attendee/results/62c63d7dda1e23bb3eeb/comparison"
+    },
+    {
+      "file": "attendee-room-confirmation",
+      "title": "Validated room and explicit timer confirmation",
+      "path": "/attendee/join?code=4aacae39b3082e265068-pre"
+    },
+    {
+      "file": "challenge-inbox",
+      "title": "Inbox Inferno — actual timed workspace",
+      "path": "/attendee/rooms/4aacae39b3082e265068-pre"
+    },
+    {
+      "file": "challenge-tables",
+      "title": "The Hundred-Table Puzzle — actual timed workspace",
+      "path": "/attendee/rooms/4aacae39b3082e265068-pre"
+    },
+    {
+      "file": "challenge-clean",
+      "title": "The Dirty Data Disaster — actual timed workspace",
+      "path": "/attendee/rooms/4aacae39b3082e265068-pre"
+    },
+    {
+      "file": "attendee-submission-review",
+      "title": "Submission review — three completed challenges",
+      "path": "/attendee/attempt/4aacae39b3082e265068-pre/review"
+    },
+    {
+      "file": "attendee-submission-receipt",
+      "title": "Durable submission receipt and locked attempt",
+      "path": "/attendee/attempt/4aacae39b3082e265068-pre/submitted"
+    },
+    {
+      "file": "host-current-grading",
+      "title": "Grading the submitted walkthrough attempt",
+      "path": "/host/rooms/4aacae39b3082e265068-pre/evaluate/DEMO001"
+    },
+    {
+      "file": "attendee-personal-results",
+      "title": "Personal results after practical evaluation",
+      "path": "/attendee/rooms/4aacae39b3082e265068-pre"
+    },
+    {
+      "file": "challenge-dashboard",
+      "title": "The Boardroom Dashboard — actual timed workspace",
+      "path": "/attendee/rooms/7f7b7ce52fe9de573cd5-pre"
+    },
+    {
+      "file": "challenge-mbr",
+      "title": "The MBR Deadline — actual timed workspace",
+      "path": "/attendee/rooms/7f7b7ce52fe9de573cd5-pre"
+    },
+    {
+      "file": "attendee-workspace",
+      "title": "Timed assessment and evidence workspace",
+      "path": "/attendee/rooms/7f7b7ce52fe9de573cd5-pre"
+    },
+    {
+      "file": "attendee-mobile",
+      "title": "390px mobile assessment workspace",
+      "path": "/attendee/rooms/7f7b7ce52fe9de573cd5-pre"
+    }
+  ]
+}

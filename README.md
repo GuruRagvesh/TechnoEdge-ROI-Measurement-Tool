@@ -2,7 +2,9 @@
 
 A working Next.js / TypeScript assessment application with separate Host and Attendee portals. Durable records are individual JSON documents in a dedicated SharePoint library, accessed server-side through Microsoft Graph. No database and no concurrently edited Excel workbook are used. A local disk adapter runs the same workflows without Microsoft 365.
 
-Current checkpoint: configurable **25 MiB direct resumable SharePoint evidence uploads**, 88 unit/integration tests and seven browser scenarios passed locally, production build passed. Live infrastructure is unverified and deployment remains unauthorized. See the [readiness report](docs/PHASE2_STAGING_READINESS.md) and [administrator checklist](docs/FINAL_ADMIN_CHECKLIST.md).
+Current checkpoint: configurable **25 MiB direct resumable SharePoint evidence uploads**, 91 unit/integration tests and seven browser scenarios passed locally, production build passed. Live infrastructure is unverified and deployment remains unauthorized. See the [readiness report](docs/PHASE2_STAGING_READINESS.md) and [administrator checklist](docs/FINAL_ADMIN_CHECKLIST.md).
+
+The [complete visual walkthrough](docs/final-review/index.html) contains 27 actual application screenshots, including all five challenges, submission, results, both portals and mobile. For access from another computer, see [private cloud development](docs/CLOUD_DEVELOPMENT.md). Codespaces configuration is provided; live cloud execution and protected staging remain unverified.
 
 The approved Corporate UX review refines Prism Studio into a navy corporate interface with exactly three sidebar destinations per role, readable cards and responsive layouts. AI Time-Back 360 supplies the four measurement dimensions and paired impact views. The earlier Python pilots informed server deadlines, opaque identities, grading and export workflows; their RAM stores, host keys and browser-only persistence were replaced. See [reference integration](docs/REFERENCE_INTEGRATION.md).
 
