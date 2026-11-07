@@ -1,0 +1,66 @@
+{
+  "captured": "2026-11-07",
+  "dataClassification": "synthetic-test",
+  "screens": [
+    {
+      "file": "host-dashboard",
+      "title": "Host dashboard",
+      "path": "/host"
+    },
+    {
+      "file": "host-create",
+      "title": "Create assessment",
+      "path": "/host/assessments/new"
+    },
+    {
+      "file": "host-manage",
+      "title": "Paired room management",
+      "path": "/host/assessments/95844b88350d6c2e7d46"
+    },
+    {
+      "file": "host-monitor",
+      "title": "Live monitoring and participants",
+      "path": "/host/rooms/baseline-pre/monitor"
+    },
+    {
+      "file": "host-evaluate",
+      "title": "Practical evaluation",
+      "path": "/host/rooms/baseline-pre/evaluate/DEMO001"
+    },
+    {
+      "file": "host-analytics",
+      "title": "Observed outcomes and modeled ROI",
+      "path": "/host/reports"
+    },
+    {
+      "file": "host-export",
+      "title": "Excel and evidence exports",
+      "path": "/host/reports/export"
+    },
+    {
+      "file": "attendee-dashboard",
+      "title": "Personal dashboard",
+      "path": "/attendee"
+    },
+    {
+      "file": "attendee-assessments",
+      "title": "Base Camp and Summit availability",
+      "path": "/attendee/assessments"
+    },
+    {
+      "file": "attendee-join",
+      "title": "Room entry and confirmed join",
+      "path": "/attendee/join"
+    },
+    {
+      "file": "attendee-comparison",
+      "title": "Pre/Post comparison",
+      "path": "/attendee/results/62c63d7dda1e23bb3eeb/comparison"
+    },
+    {
+      "file": "attendee-workspace",
+      "title": "Timed assessment and evidence workspace",
+      "path": "/attendee/rooms/95844b88350d6c2e7d46-pre"
+    }
+  ]
+}

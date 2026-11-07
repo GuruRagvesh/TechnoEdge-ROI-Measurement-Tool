@@ -1,0 +1,55 @@
+{
+  "name": "technoedge-assessment-roi",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "dev": "next dev --hostname 127.0.0.1",
+    "build": "next build --webpack",
+    "start": "node .next-app/standalone/server.js",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run --configLoader native",
+    "test:e2e": "playwright test",
+    "materials:verify": "node scripts/run.mjs scripts/verify-materials.ts",
+    "seed:demo": "node --env-file-if-exists=.env.local scripts/run.mjs scripts/seed-demo.ts",
+    "storage:probe": "node --env-file-if-exists=.env.local scripts/run.mjs scripts/storage-probe.ts",
+    "recover": "node --env-file-if-exists=.env.local scripts/run.mjs scripts/recover.ts",
+    "postbuild": "node scripts/copy-standalone.mjs",
+    "reset:test-accounts": "node --env-file-if-exists=.env.local scripts/run.mjs scripts/reset-test-accounts.ts",
+    "hosts": "node --env-file-if-exists=.env.local scripts/run.mjs scripts/host-registry.ts",
+    "infrastructure:check": "node --env-file-if-exists=.env.local scripts/run.mjs scripts/infrastructure-check.ts",
+    "email:probe": "node --env-file-if-exists=.env.local scripts/run.mjs scripts/email-probe.ts",
+    "storage:cohort-probe": "node --env-file-if-exists=.env.local scripts/run.mjs scripts/cohort-probe.ts"
+  },
+  "dependencies": {
+    "docx": "^9.5.0",
+    "exceljs": "^4.4.0",
+    "jszip": "^3.10.1",
+    "lucide-react": "^0.468.0",
+    "next": "^16.0.0",
+    "nodemailer": "^10.3.1",
+    "openid-client": "^6.8.0",
+    "proper-lockfile": "^4.1.2",
+    "react": "^19.2.0",
+    "react-dom": "^19.2.0",
+    "zod": "^4.1.0"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.56.0",
+    "@types/node": "^22.0.0",
+    "@types/nodemailer": "^7.0.0",
+    "@types/proper-lockfile": "^4.1.4",
+    "@types/react": "^19.0.0",
+    "@types/react-dom": "^19.0.0",
+    "prettier": "^3.9.10",
+    "tsx": "^4.20.0",
+    "typescript": "^5.9.0",
+    "vitest": "^3.2.0"
+  },
+  "type": "module",
+  "overrides": {
+    "uuid": "^11.1.1"
+  },
+  "engines": {
+    "node": ">=22.22.0"
+  }
+}

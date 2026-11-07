@@ -1,0 +1,359 @@
+import ExcelJS from "exceljs";
+import JSZip from "jszip";
+import { createHash, randomUUID } from "node:crypto";
+import { AssessmentService, comparison, metrics } from "./assessment";
+import { answerKey, catalogue } from "./challenges";
+import {
+  AppError,
+  type Identity,
+  type Participant,
+  type Room,
+  type Evidence,
+} from "./types";
+import { getJson } from "./storage";
+export async function excelReport(
+  service: AssessmentService,
+  room: Room,
+  host: Identity,
+  onSaved?: (key: string) => void,
+) {
+  const participants = await service.attendees(room.id, host),
+    wb = new ExcelJS.Workbook();
+  wb.creator = "TechnoEdge Learning Services";
+  wb.calcProperties.fullCalcOnLoad = true;
+  wb.created = new Date();
+  const methodology = wb.addWorksheet("Read me");
+  [
+    ["TechnoEdge Assessment ROI", "Assessment export"],
+    ["Generated UTC", new Date().toISOString()],
+    ["Room", room.name],
+    ["Phase", room.phase],
+    ["Batch", room.batch],
+    [
+      "Data classification",
+      room.dataClassification === "synthetic-test" ||
+      participants.some((p) => p.identity.testAccount)
+        ? "synthetic-test — local account records; not real employee results"
+        : "assessment",
+    ],
+    [
+      "Scoring",
+      room.scoringVersion === "corporate-60-v1"
+        ? "corporate-60-v1: 3 tasks × (12 MCQ + 8 practical) = 60 marks. Each MCQ awards 3 marks. Final score requires all 3 grades."
+        : "legacy-100: MCQ 40% (12 questions), practical 60% (3 tasks × 15 points). Final score requires all 3 grades.",
+    ],
+    [
+      "Practical rubric",
+      room.scoringVersion === "corporate-60-v1"
+        ? "Completeness /3, accuracy /3, presentation /2 per selected task."
+        : "Accuracy, quality, completeness: each 0–5 per selected task.",
+    ],
+    [
+      "Time",
+      "Started to submitted, capped at deadline. No active-working-time telemetry. Deadline submissions use the full duration.",
+    ],
+    [
+      "Comparison",
+      "Same verified identity, same categories, linked room and duration; complete grading required. Review accuracy/quality alongside speed.",
+    ],
+    [
+      "Evidence",
+      "SHA-256 checksums in Evidence sheet. Files in separate host-authorized ZIP.",
+    ],
+    [
+      "ROI",
+      "Observed elapsed time is not causal proof of AI impact. Repetition and familiarity may influence results. Financial values are modeled capacity, not realized cash savings.",
+    ],
+    [
+      "Consistency",
+      "Rows are a captured per-participant snapshot; a batch is not a cross-record database transaction.",
+    ],
+  ].forEach((row) => methodology.addRow(row));
+  const people = wb.addWorksheet("Participants");
+  people.addRow([
+    "ID",
+    "Name",
+    "Email",
+    "Status",
+    "Selected tasks",
+    "Started UTC",
+    "Deadline UTC",
+    "Submitted UTC",
+    "Reason",
+    "Minutes",
+    "Completed tasks",
+    "MCQ /12",
+    "Accuracy %",
+    "Practical raw marks (24 or 45 maximum)",
+    "Quality %",
+    "Final score (see scoring version)",
+    "Fully graded",
+    "Revision",
+    "Data classification",
+    "Scoring version",
+    "Maximum score",
+    "MCQ awarded marks",
+  ]);
+  const answers = wb.addWorksheet("Task answers");
+  answers.addRow([
+    "Participant ID",
+    "Task",
+    "Question",
+    "Prompt",
+    "Selected option (1-based)",
+    "Selected answer",
+    "Correct option (1-based)",
+    "Correct answer",
+    "Awarded marks",
+    "Maximum marks",
+    "Scoring version",
+  ]);
+  const tasks = wb.addWorksheet("Practical evaluations");
+  tasks.addRow([
+    "Participant ID",
+    "Task",
+    "Completed UTC",
+    "MCQ /4",
+    "Accuracy raw marks (3 or 5 maximum)",
+    "Presentation / quality raw marks (2 or 5 maximum)",
+    "Completeness raw marks (3 or 5 maximum)",
+    "Feedback",
+    "Grader ID",
+    "Graded UTC",
+    "Method notes",
+  ]);
+  const evidence = wb.addWorksheet("Evidence");
+  evidence.addRow([
+    "Participant ID",
+    "Task",
+    "Filename",
+    "Bytes",
+    "SHA256",
+    "Uploaded UTC",
+    "Storage path",
+  ]);
+  const pairs = wb.addWorksheet("Pre Post comparisons");
+  pairs.addRow([
+    "Participant ID",
+    "Pre room",
+    "Post room",
+    "Comparable",
+    "Pre minutes",
+    "Post minutes",
+    "Minutes saved",
+    "Time reduction %",
+    "Score delta points",
+    "Accuracy delta points",
+    "Quality delta points",
+  ]);
+  const key = answerKey(room.phase);
+  for (const p of participants) {
+    const m = metrics(p);
+    people.addRow([
+      p.identity.id,
+      p.identity.name,
+      p.identity.email,
+      p.submittedAt ? "Submitted" : p.startedAt ? "In progress" : "Joined",
+      p.selected.join(", "),
+      p.startedAt,
+      p.deadline,
+      p.submittedAt,
+      p.submissionReason,
+      m.minutes,
+      m.completed,
+      m.mcq,
+      m.accuracy,
+      m.practical,
+      m.quality,
+      m.score,
+      m.fullyGraded,
+      p.revision,
+      p.identity.testAccount || room.dataClassification === "synthetic-test"
+        ? "synthetic-test"
+        : "assessment",
+      m.scoringVersion,
+      m.maximum,
+      m.mcqMarks,
+    ]);
+    for (const id of p.selected) {
+      const g = p.grades[id];
+      tasks.addRow([
+        p.identity.id,
+        catalogue[id].title,
+        p.taskCompletedAt[id],
+        p.mcq[id],
+        g?.accuracy,
+        g?.quality,
+        g?.completeness,
+        g?.feedback,
+        g?.graderId,
+        g?.at,
+        p.notes[id],
+      ]);
+      key[id].forEach((q, i) => {
+        const a = p.answers[id]?.[i];
+        answers.addRow([
+          p.identity.id,
+          id,
+          i + 1,
+          q.prompt,
+          a !== undefined && a >= 0 ? a + 1 : null,
+          a !== undefined && a >= 0 ? q.options[a] : null,
+          q.correct + 1,
+          q.options[q.correct],
+          p.submittedAt && a === q.correct
+            ? p.scoringVersion === "corporate-60-v1"
+              ? 3
+              : 1
+            : 0,
+          p.scoringVersion === "corporate-60-v1" ? 3 : 1,
+          p.scoringVersion || "legacy-100",
+        ]);
+      });
+    }
+    for (const e of p.evidence)
+      evidence.addRow([
+        p.identity.id,
+        e.task,
+        e.name,
+        e.size,
+        e.sha256,
+        e.uploadedAt,
+        e.path,
+      ]);
+    if (room.phase === "post" && room.preRoomId) {
+      const pre = await service.participant(room.preRoomId, p.identity.id);
+      if (pre) {
+        const c = comparison(pre, p);
+        pairs.addRow([
+          p.identity.id,
+          room.preRoomId,
+          room.id,
+          c.comparable,
+          metrics(pre).minutes,
+          m.minutes,
+          c.minutesSaved,
+          c.timeReduction,
+          c.scoreDelta,
+          c.accuracyDelta,
+          c.qualityDelta,
+        ]);
+      }
+    }
+  }
+  const roi = wb.addWorksheet("Modeled ROI");
+  roi.addRow(["Assumption / result", "Value", "Interpretation"]);
+  roi.addRow([
+    "Observed paired minutes saved per cycle",
+    null,
+    "Enter an eligible paired result from Pre Post comparisons; negative values are allowed.",
+  ]);
+  roi.addRow(["Cycles per year", 12, "Editable assumption"]);
+  roi.addRow(["Loaded hourly cost INR", 1000, "Editable assumption"]);
+  roi.addRow(["Adoption fraction", 0.7, "Editable assumption 0–1"]);
+  roi.addRow(["Annual investment INR", 0, "Editable assumption"]);
+  roi.addRow([
+    "Annual capacity value INR",
+    { formula: "IF(ISNUMBER(B2),B2/60*B3*B4*B5,0)" },
+    "Modeled, not realized savings",
+  ]);
+  roi.addRow([
+    "Modeled net value INR",
+    { formula: "B7-B6" },
+    "Capacity value less investment",
+  ]);
+  roi.addRow([
+    "Modeled ROI %",
+    { formula: "IF(B6>0,(B7-B6)/B6*100,0)" },
+    "Requires a positive investment assumption",
+  ]);
+  for (const sheet of wb.worksheets) {
+    sheet.views = [{ state: "frozen", ySplit: 1 }];
+    sheet.getRow(1).font = { bold: true, color: { argb: "FFFFFFFF" } };
+    sheet.getRow(1).fill = {
+      type: "pattern",
+      pattern: "solid",
+      fgColor: { argb: "FF5046B8" },
+    };
+    sheet.columns.forEach((c) => {
+      c.width = 24;
+    });
+    if (sheet.rowCount > 1)
+      sheet.autoFilter = {
+        from: "A1",
+        to: { row: sheet.rowCount, column: sheet.columnCount },
+      };
+  }
+  const data = Buffer.from(await wb.xlsx.writeBuffer());
+  const file = `rooms/${room.id}/reports/${Date.now()}-${randomUUID()}.xlsx`;
+  await service.store.write(file, data, null);
+  onSaved?.(file);
+  return data;
+}
+export type EvidenceSnapshot = {
+  participant: { id: string; name: string; testAccount?: true };
+  e: Evidence;
+};
+export async function evidenceZip(
+  service: AssessmentService,
+  room: Room,
+  host: Identity,
+  onSaved?: (key: string) => void,
+  snapshot?: EvidenceSnapshot[],
+) {
+  service.assertHost(room, host);
+  const people = snapshot ? [] : await service.attendees(room.id, host);
+  const files = snapshot
+    ? snapshot.map((x) => ({ p: { identity: x.participant }, e: x.e }))
+    : people.flatMap((p) => p.evidence.map((e) => ({ p, e })));
+  if (files.reduce((n, x) => n + x.e.size, 0) > 150 * 1024 * 1024)
+    throw new AppError(
+      413,
+      "Batch archive exceeds 150 MB. Download individual evidence files from evaluations.",
+    );
+  const zip = new JSZip();
+  const manifest = [];
+  for (const { p, e } of files) {
+    const blob = await service.store.read(e.path);
+    if (!blob)
+      throw new AppError(
+        503,
+        `Evidence missing for ${p.identity.name}. Archive cancelled.`,
+      );
+    if (
+      blob.data.length !== e.size ||
+      createHash("sha256").update(blob.data).digest("hex") !== e.sha256
+    )
+      throw new AppError(503, "Evidence checksum mismatch. Archive cancelled.");
+    zip.file(
+      `${p.identity.id}/${e.task}/${e.id.slice(0, 12)}-${e.name}`,
+      blob.data,
+    );
+    manifest.push({ participant: p.identity.id, ...e });
+  }
+  zip.file(
+    "manifest.json",
+    JSON.stringify(
+      {
+        roomId: room.id,
+        dataClassification:
+          room.dataClassification === "synthetic-test" ||
+          files.some((x) => x.p.identity.testAccount)
+            ? "synthetic-test"
+            : "assessment",
+        generatedAt: new Date().toISOString(),
+        files: manifest,
+      },
+      null,
+      2,
+    ),
+  );
+  const data = await zip.generateAsync({
+    type: "nodebuffer",
+    compression: "DEFLATE",
+  });
+  const archiveKey = `rooms/${room.id}/reports/${Date.now()}-${randomUUID()}-evidence.zip`;
+  await service.store.write(archiveKey, data, null);
+  onSaved?.(archiveKey);
+  return data;
+}

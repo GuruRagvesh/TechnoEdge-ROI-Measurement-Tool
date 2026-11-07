@@ -1,0 +1,116 @@
+{
+  "configurationReady": false,
+  "liveVerified": false,
+  "deploymentApproved": false,
+  "checks": [
+    {
+      "key": "APP_URL",
+      "status": "invalid",
+      "required": true
+    },
+    {
+      "key": "STORAGE_ADAPTER",
+      "status": "invalid",
+      "required": true
+    },
+    {
+      "key": "MOCK_AUTH",
+      "status": "invalid",
+      "required": true
+    },
+    {
+      "key": "LOCAL_TEST_ACCOUNTS",
+      "status": "invalid",
+      "required": true
+    },
+    {
+      "key": "GRAPH_TENANT_ID",
+      "status": "missing",
+      "required": true
+    },
+    {
+      "key": "GRAPH_CLIENT_ID",
+      "status": "missing",
+      "required": true
+    },
+    {
+      "key": "GRAPH_CLIENT_SECRET",
+      "status": "missing",
+      "required": true
+    },
+    {
+      "key": "GRAPH_DRIVE_ID",
+      "status": "missing",
+      "required": true
+    },
+    {
+      "key": "GRAPH_SITE_URL",
+      "status": "missing",
+      "required": true
+    },
+    {
+      "key": "GRAPH_SITE_ID",
+      "status": "missing",
+      "required": true
+    },
+    {
+      "key": "GRAPH_STORAGE_ROOT",
+      "status": "missing",
+      "required": true
+    },
+    {
+      "key": "GRAPH_LAYOUT",
+      "status": "missing",
+      "required": true
+    },
+    {
+      "key": "MAIL_PROVIDER",
+      "status": "missing",
+      "required": true
+    },
+    {
+      "key": "RESEND_API_KEY",
+      "status": "missing",
+      "required": true
+    },
+    {
+      "key": "EMAIL_FROM",
+      "status": "missing",
+      "required": true
+    },
+    {
+      "key": "IDENTITY_PEPPER",
+      "status": "invalid",
+      "required": true
+    },
+    {
+      "key": "VERCEL_PROJECT_ID",
+      "status": "missing",
+      "required": false
+    },
+    {
+      "key": "VERCEL_ORG_ID",
+      "status": "missing",
+      "required": false
+    },
+    {
+      "key": "VERCEL_TOKEN",
+      "status": "missing",
+      "required": false
+    },
+    {
+      "key": "ERROR_MONITOR_URL",
+      "status": "missing",
+      "required": false
+    }
+  ],
+  "manualGates": [
+    "Microsoft administrator approval; site/library creation and Sites.Selected consent + site write grant",
+    "Resend sender-domain verification, DNS and inbox-delivery checks",
+    "Approved protected Vercel staging project, access policy and log/error alert ownership",
+    "Live direct-upload CORS, 25 MiB resume/finalization, conditional-write and larger export verification",
+    "20-participant live concurrency/recovery probe; real Pre/Post pilot with 2 internal users, then 10 participants, then a larger approved cohort"
+  ],
+  "siteReadVerified": false,
+  "note": "No secrets or resource identifiers are printed. Read-only checks do not prove write concurrency, email delivery or pilot success."
+}
