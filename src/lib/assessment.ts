@@ -682,35 +682,4 @@ export class AssessmentService {
     });
   }
 }
-export { metrics } from "./metrics";
-export function comparison(pre: Participant, post: Participant) {
-  const a = metrics(pre),
-    b = metrics(post);
-  const comparable =
-    (pre.scoringVersion || "legacy-100") ===
-      (post.scoringVersion || "legacy-100") &&
-    pre.identity.id === post.identity.id &&
-    !!pre.submittedAt &&
-    !!post.submittedAt &&
-    pre.selected.length === 3 &&
-    pre.selected.every((t) => post.selected.includes(t)) &&
-    a.completed === 3 &&
-    b.completed === 3 &&
-    a.fullyGraded &&
-    b.fullyGraded;
-  const minutesSaved =
-    comparable && a.minutes !== null && b.minutes !== null
-      ? a.minutes - b.minutes
-      : null;
-  return {
-    comparable,
-    minutesSaved,
-    timeReduction:
-      minutesSaved !== null && a.minutes! > 0
-        ? (minutesSaved / a.minutes!) * 100
-        : null,
-    scoreDelta: comparable ? b.score! - a.score! : null,
-    accuracyDelta: comparable ? b.accuracy! - a.accuracy! : null,
-    qualityDelta: comparable ? b.quality! - a.quality! : null,
-  };
-}
+export { comparison, metrics } from "./metrics";

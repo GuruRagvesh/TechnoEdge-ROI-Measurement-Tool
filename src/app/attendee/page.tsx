@@ -2,13 +2,8 @@
 import { usePathname } from "next/navigation";
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import {
-  ArrowRight,
-  CheckCircle2,
-  Clock3,
-  Target,
-  TrendingUp,
-} from "lucide-react";
+import { ArrowRight, CheckCircle2, Clock3, Target } from "lucide-react";
+import { PrePostCharts } from "@/components/pre-post-charts";
 import {
   api,
   Empty,
@@ -21,7 +16,16 @@ import {
 } from "@/components/ui";
 import type { Participant, Room } from "@/lib/types";
 import type { comparison, metrics } from "@/lib/assessment";
-import { PrePostCharts } from "@/components/pre-post-charts";
+import { card, pairOf, roomLabel } from "@/lib/scorecard";
+import {
+  ChallengeResults,
+  Definitions,
+  fmt,
+  PrePostPanel,
+  PrimaryMetrics,
+  SecondaryMetrics,
+  StatusPill,
+} from "@/components/scorecard-view";
 type Entry = {
   room: Room;
   participant: Participant | null;
@@ -34,7 +38,8 @@ export default function Attendee() {
   const { identity, error: authError, single } = useIdentity("attendee"),
     [entries, setEntries] = useState<Entry[]>([]),
     [loaded, setLoaded] = useState(false),
-    [error, setError] = useState("");
+    [error, setError] = useState(""),
+    [chosen, setChosen] = useState("");
   useEffect(() => {
     if (!identity) return;
     let cancelled = false;
@@ -94,6 +99,36 @@ export default function Attendee() {
         (!program || x.room.programId === program || x.room.id === program),
     ),
     latest = completed.at(-1);
+  // Only this attendee's own records are returned by the dashboard API.
+  const attempts = entries.filter(
+    (x) =>
+      x.participant &&
+      (!program || x.room.programId === program || x.room.id === program),
+  );
+  const focus =
+    attempts.find((x) => x.room.id === chosen) ||
+    (activeAttempt && attempts.includes(activeAttempt)
+      ? activeAttempt
+      : null) ||
+    (latest && attempts.includes(latest) ? latest : null) ||
+    attempts.at(-1);
+  const focusCard = focus?.participant
+    ? card(
+        focus.room,
+        focus.participant,
+        focus.room.preRoomId
+          ? pairOf(
+              entries.find((x) => x.room.id === focus.room.preRoomId)
+                ?.participant,
+              focus.participant,
+            )
+          : pairOf(
+              focus.participant,
+              entries.find((x) => x.room.preRoomId === focus.room.id)
+                ?.participant,
+            ),
+      )
+    : null;
   return (
     <Shell identity={identity}>
       <div className="page-heading">
@@ -166,45 +201,108 @@ export default function Attendee() {
           </div>
         </section>
       )}
-      <section className="stats-grid">
-        <Stat
-          label="Assessments submitted"
-          value={completed.length}
-          detail="Across your joined rooms"
-        />
-        <Stat
-          label="Latest final score"
-          value={format(
-            latest?.metrics?.score,
-            ` / ${latest?.metrics?.maximum || 60}`,
-          )}
-          detail={
-            latest?.metrics?.fullyGraded
-              ? "MCQ + practical evaluation"
-              : "Available after practical evaluation"
-          }
-        />
-        <Stat
-          label="Latest MCQ accuracy"
-          value={format(latest?.metrics?.accuracy, "%")}
-          detail="Automatically marked results"
-        />
-        {single ? (
-          <Stat
-            label="Elapsed time"
-            value={format(latest?.metrics?.minutes, " min")}
-            detail="Confirmed join to submission"
-            icon={<Clock3 size={17} />}
+      {focus && focusCard && (
+        <section className="sc-root" aria-label="Your results">
+          <div className="sc-person">
+            <div>
+              <span className="eyebrow">YOUR RESULTS</span>
+              <h2>{focusCard.roomLabel}</h2>
+              <p>
+                {focusCard.submittedAt
+                  ? "Submitted " + new Date(focusCard.submittedAt).toLocaleString()
+                  : focusCard.status === "In progress"
+                    ? "In progress · your work saves automatically"
+                    : "Not started"}
+                {focusCard.endedAtDeadline && " · ended at the deadline"}
+              </p>
+            </div>
+            <div className="sc-person-actions">
+              {attempts.length > 1 && (
+                <label className="sc-inline-select">
+                  Assessment
+                  <select
+                    value={focus.room.id}
+                    onChange={(e) => setChosen(e.target.value)}
+                  >
+                    {attempts.map((x) => (
+                      <option key={x.room.id} value={x.room.id}>
+                        {roomLabel(x.room)}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              )}
+              <StatusPill status={focusCard.status} />
+            </div>
+          </div>
+          <PrimaryMetrics
+            score={focusCard.score}
+            maximum={focusCard.maximum}
+            scoreDetail={
+              focusCard.score !== null
+                ? "Finalized assessment"
+                : focusCard.submittedAt
+                  ? "Available after practical evaluation"
+                  : "Available after submission and evaluation"
+            }
+            attempted={focusCard.attempted || null}
+            attemptedDetail={`${focusCard.mcqAnswered} of ${focusCard.attempted * 4 || 12} MCQs answered`}
+            minutes={focusCard.minutes}
+            minutesDetail={
+              focusCard.minutes !== null
+                ? "Out of 60 minutes"
+                : "Shown after submission"
+            }
+            accuracy={focusCard.accuracy}
+            accuracyDetail={
+              focusCard.accuracy !== null
+                ? `${focusCard.mcqCorrect} of ${focusCard.mcqAnswered} correct`
+                : "Shown after submission"
+            }
           />
-        ) : (
-          <Stat
-            label="Observed time reduction"
-            value={format(paired?.comparison?.timeReduction, "%")}
-            detail="Matched & graded Pre/Post pair"
-            icon={<TrendingUp size={17} />}
+          <PrePostPanel
+            pre={focusCard.pre}
+            post={focusCard.post}
+            improvement={focusCard.improvement}
+            maximum={focusCard.maximum}
+            detail="Your evaluated Pre-Test and Post-Test, when both exist."
           />
-        )}
-      </section>
+          <SecondaryMetrics
+            items={[
+              {
+                label: "Assessment status",
+                value: <StatusPill status={focusCard.status} />,
+              },
+              {
+                label: "Evaluation status",
+                value: (
+                  <StatusPill
+                    status={
+                      focusCard.evaluation === "Not submitted"
+                        ? "Not submitted"
+                        : focusCard.evaluation
+                    }
+                  />
+                ),
+              },
+              {
+                label: "Evidence uploaded",
+                value: `${focusCard.evidenceReceived} of ${focusCard.evidenceExpected || 3}`,
+                detail: "Files verified by the server",
+              },
+              {
+                label: "Completion",
+                value: fmt(focusCard.completion, "%"),
+                detail: "Selected challenges marked complete",
+              },
+            ]}
+          />
+          <ChallengeResults
+            rows={focusCard.challenges}
+            submitted={!!focusCard.submittedAt}
+          />
+        </section>
+      )}
       <div className="section-heading">
         <div>
           <h2>{single ? "Your assessment" : "Your assessments"}</h2>
@@ -331,7 +429,7 @@ export default function Attendee() {
             </article>
           ))}
       </div>
-      {paired && (
+      {paired && path.includes("/results") && (
         <section className="panel comparison-panel">
           <div className="section-heading">
             <div>
@@ -391,6 +489,7 @@ export default function Attendee() {
           </p>
         </div>
       </div>
+      {focusCard && <Definitions />}
     </Shell>
   );
 }
