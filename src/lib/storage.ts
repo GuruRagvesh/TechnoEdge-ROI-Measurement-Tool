@@ -420,7 +420,20 @@ export class GraphStorage implements Storage {
         }),
       },
     );
-    if (!r.ok) throw new AppError(503, "Unable to prepare evidence upload");
+    if (!r.ok) {
+      // Report Microsoft's status and error code (never a URL or token) so
+      // operators can act; e.g. 403 accessDenied vs 400 invalidRequest.
+      const code = await r
+        .json()
+        .then((b) =>
+          String(b?.error?.code || "").replace(/[^A-Za-z0-9_.-]/g, ""),
+        )
+        .catch(() => "");
+      throw new AppError(
+        503,
+        `Unable to prepare evidence upload (SharePoint ${r.status}${code ? " " + code : ""})`,
+      );
+    }
     const data = await r.json();
     return {
       uploadUrl: this.sessionUrl(data.uploadUrl),
