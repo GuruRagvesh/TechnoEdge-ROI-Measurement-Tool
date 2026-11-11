@@ -28,8 +28,11 @@ export type Program = {
   postRoomId: string;
   createdAt: string;
   ready: boolean;
+  // "single" = one assessment round; postRoomId is empty. Absent = paired Base Camp/Summit.
+  mode?: "single";
 };
 export type Room = {
+  mode?: "single";
   programId?: string;
   company?: string;
   scoringVersion?: ScoringVersion;
@@ -61,6 +64,8 @@ export type Grade = {
   feedback: string;
   graderId: string;
   at: string;
+  // Set when the zero was recorded by the no-evidence policy, not by a host.
+  automatic?: true;
 };
 export type Participant = {
   uploadReservations?: string[];
@@ -69,6 +74,8 @@ export type Participant = {
   roomId: string;
   selected: TaskId[];
   answers: Partial<Record<TaskId, number[]>>;
+  // Server time each answer last changed; index-aligned with answers.
+  answerSavedAt?: Partial<Record<TaskId, (string | null)[]>>;
   notes: Partial<Record<TaskId, string>>;
   evidence: Evidence[];
   startedAt: string | null;

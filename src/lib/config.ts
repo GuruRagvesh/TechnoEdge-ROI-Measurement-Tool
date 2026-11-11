@@ -10,6 +10,12 @@ export function mockAuth() {
     process.env.STORAGE_ADAPTER !== "graph"
   );
 }
+// Single-round is the release default. ASSESSMENT_MODE=paired restores Base Camp + Summit creation.
+export function assessmentMode(): "single" | "paired" {
+  return process.env.ASSESSMENT_MODE === "paired" ? "paired" : "single";
+}
+export const MATERIAL_VERSION = "base-camp-pack-v1";
+export const ANSWER_KEY_VERSION = "base-camp-keys-v1";
 export function appUrl() {
   return new URL(process.env.APP_URL || "http://127.0.0.1:3000");
 }

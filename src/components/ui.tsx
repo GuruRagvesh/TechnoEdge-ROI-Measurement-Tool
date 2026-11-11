@@ -25,20 +25,27 @@ export async function api<T = Record<string, unknown>>(
   if (!response.ok) throw new Error(result.error || "Request failed");
   return result;
 }
+// Set from the server before any signed-in page renders its Shell.
+let singleRound = true;
 export function useIdentity(role: "host" | "attendee") {
   const [identity, set] = useState<Identity | null>(null),
+    [single, setSingle] = useState(true),
     [error, setError] = useState("");
   const router = useRouter();
   useEffect(() => {
-    api<{ identity: Identity | null }>("auth/me")
+    api<{ identity: Identity | null; assessmentMode?: string }>("auth/me")
       .then((x) => {
         if (!x.identity || x.identity.role !== role)
           router.replace(x.identity ? "/" + x.identity.role : "/login");
-        else set(x.identity);
+        else {
+          singleRound = x.assessmentMode !== "paired";
+          setSingle(singleRound);
+          set(x.identity);
+        }
       })
       .catch((e) => setError(e.message));
   }, [role, router]);
-  return { identity, error };
+  return { identity, error, single };
 }
 export function Shell({
   identity,
@@ -53,14 +60,21 @@ export function Shell({
   const links = host
     ? [
         ["/host", "Dashboard"],
-        ["/host/assessments", "Assessments"],
-        ["/host/reports", "Results & Reports"],
+        ["/host/assessments", singleRound ? "Rooms" : "Assessments"],
+        singleRound
+          ? ["/host/reports/export", "Results export"]
+          : ["/host/reports", "Results & Reports"],
       ]
-    : [
-        ["/attendee", "Dashboard"],
-        ["/attendee/assessments", "My Assessments"],
-        ["/attendee/results", "Results"],
-      ];
+    : singleRound
+      ? [
+          ["/attendee", "Dashboard"],
+          ["/attendee/results", "My results"],
+        ]
+      : [
+          ["/attendee", "Dashboard"],
+          ["/attendee/assessments", "My Assessments"],
+          ["/attendee/results", "Results"],
+        ];
   const activeAttempt = path.includes("/rooms/") || path.includes("/attempt/");
   return (
     <div className="corporate-shell">
@@ -109,13 +123,17 @@ export function Shell({
           <div>
             <small>{host ? "Host" : "Attendee"} portal</small>
             <strong>
-              {host ? "Assessment Management" : "AI Productivity Benchmark"}
+              {host
+                ? "Assessment Management"
+                : singleRound
+                  ? "AI Productivity Assessment"
+                  : "AI Productivity Benchmark"}
             </strong>
           </div>
           <div className="button-row">
             {!host && !activeAttempt && path !== "/attendee/join" && (
               <Link className="button primary" href="/attendee/join">
-                + Start Test
+                {singleRound ? "Start Assessment" : "+ Start Test"}
               </Link>
             )}
             <span className="user-name">{identity.name}</span>

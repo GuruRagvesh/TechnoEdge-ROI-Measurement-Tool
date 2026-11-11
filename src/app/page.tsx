@@ -10,44 +10,47 @@ export default function Home() {
           </span>
         </Link>
         <Link className="button primary" href="/login">
-          Sign in / Sign up
+          Sign in / Get started
         </Link>
       </header>
       <main className="public-main">
         <span className="eyebrow">TECHNOEDGE LEARNING SERVICES</span>
-        <h1>
-          Assess the work.
-          <br />
-          Measure the progress.
-        </h1>
+        <h1>AI Productivity Assessment</h1>
         <p>
-          A practical assessment platform for corporate teams. Establish your
-          baseline before training, then measure performance across equivalent
-          challenges after AI training.
+          One timed, practical assessment for working professionals. You choose
+          three of five business challenges, work on the supplied files in your
+          own tools, and upload what you produce.
         </p>
         <Link className="button primary" href="/login">
-          Sign in to your workspace →
+          Sign in / Get started →
         </Link>
         <section className="stats-grid">
           <article className="panel">
-            <h2>Base Camp</h2>
-            <p>Before AI · Establish your baseline.</p>
-          </article>
-          <article className="panel">
-            <h2>Summit</h2>
-            <p>After AI · Measure observed improvement.</p>
-          </article>
-          <article className="panel">
-            <h2>Evidence and results</h2>
+            <h2>60 minutes, one attempt</h2>
             <p>
-              Five fixed challenges. Choose three. Sixty minutes per round.
-              Evaluated practical deliverables and verified MCQs.
+              The clock starts when you confirm entry and keeps running if you
+              close the page. An attempt cannot be restarted.
+            </p>
+          </article>
+          <article className="panel">
+            <h2>Three of five challenges</h2>
+            <p>
+              Email analysis, Excel consolidation, data cleaning, an Excel
+              dashboard, or a Word-to-PowerPoint management review.
+            </p>
+          </article>
+          <article className="panel">
+            <h2>Download, work, upload</h2>
+            <p>
+              Download each challenge pack, answer four questions from your
+              results, and upload your Excel or PowerPoint file as evidence.
             </p>
           </article>
         </section>
         <p className="help">
-          Observed scores, elapsed time and work quality are reported separately
-          from modeled financial ROI.
+          You will need a laptop with Excel and PowerPoint, the room code from
+          your coordinator, and an email inbox you can open to receive a sign-in
+          code. Answers are saved as you work.
         </p>
       </main>
       <footer>TechnoEdge Learning Services · Assessment ROI</footer>

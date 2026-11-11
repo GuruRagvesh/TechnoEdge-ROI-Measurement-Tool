@@ -132,8 +132,8 @@ export default function Home() {
             <em>Real progress.</em>
           </h1>
           <p>
-            A practical benchmark for the way you work. Take on real business
-            challenges, discover your strengths, and see what changes with AI.
+            A practical assessment of the way you work. Take on three real
+            business challenges in one timed 60-minute session.
           </p>
           <div className="welcome-features">
             <span>
@@ -146,25 +146,21 @@ export default function Home() {
             </span>
             <span>
               <Sparkles />
-              Pre & Post AI
+              One attempt
             </span>
           </div>
           <div className="story-card">
-            <div className="mini-chart">
-              <i style={{ height: "35%" }} />
-              <i style={{ height: "55%" }} />
-              <i style={{ height: "45%" }} />
-              <i style={{ height: "72%" }} />
-              <i style={{ height: "88%" }} />
-            </div>
             <div>
-              <span className="eyebrow">EVIDENCE OVER ESTIMATES</span>
+              <span className="eyebrow">HOW SIGN-IN WORKS</span>
               <strong>
-                See your progress.
+                Enter your name and email.
                 <br />
-                Understand your impact.
+                We email you a 6-digit code.
               </strong>
-              <small>Skills · Quality · Time · Productivity</small>
+              <small>
+                Gmail, Outlook and company email addresses all work. No password
+                to remember.
+              </small>
             </div>
             <ArrowUpRight size={22} />
           </div>
@@ -172,11 +168,13 @@ export default function Home() {
         <section className="signin-card">
           <span className="pill">WELCOME TO YOUR WORKSPACE</span>
           <h1>Welcome to TechnoEdge</h1>
-          <p>Sign in to continue.</p>
+          <p>Sign in or register with your email to continue.</p>
           <form onSubmit={submit}>
             {stage === "identifier" ? (
               <>
-                <label htmlFor="identifier">Email or User ID</label>
+                <label htmlFor="identifier">
+                  {localAvailable ? "Email or User ID" : "Email address"}
+                </label>
                 <input
                   id="identifier"
                   type="text"
@@ -229,8 +227,8 @@ export default function Home() {
                   autoFocus
                 />
                 <p className="help">
-                  We’ll email a verification code. Use the same email for both
-                  assessments.
+                  We’ll email a 6-digit verification code. Use an inbox you can
+                  open right now.
                 </p>
               </>
             )}

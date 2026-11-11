@@ -6,5 +6,7 @@ export default defineConfig({
     include: ["tests/**/*.test.ts"],
     testTimeout: 30000,
     environment: "node",
+    // Existing suites cover the paired Base Camp/Summit flow; single-round.test.ts sets its own mode.
+    env: { ASSESSMENT_MODE: "paired" },
   },
 });
