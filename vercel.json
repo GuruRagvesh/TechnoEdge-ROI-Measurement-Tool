@@ -3,6 +3,7 @@
   "framework": "nextjs",
   "buildCommand": "npm run typecheck && npm test && npm run materials:verify && npm run build",
   "installCommand": "npm ci",
+  "outputDirectory": ".next-app",
   "git": {
     "deploymentEnabled": {
       "main": false
