@@ -29,23 +29,20 @@ over the 40 questions; no task uses one position more than twice). Rooms created
 `optionLayout` and keep the original sequential order, so their saved answers still mark correctly.
 The Excel export and host answer key state which layout a room uses.
 
-## Protected Vercel staging
+## Vercel deployment (production from main)
 
-`vercel.json` disables deployments of `main` and skips every build except the `staging` branch.
-Staging is therefore a Preview deployment, which Vercel Authentication protects by default.
-On the Hobby plan the production address is never protected, so nothing deploys to production.
+Decision (11 Nov 2026): deploy directly to Production from `main`.
+`vercel.json` builds only `main`; every other branch is skipped. On the Hobby plan the
+production address `technoedge-assessment.vercel.app` is public, so access control is the
+application's own: email-code sign-in, server-side host allowlist, answer keys kept on the server.
 
-1. Import the repository in Vercel (project name `technoedge-assessment`).
-2. Settings → Deployment Protection: confirm Vercel Authentication is on.
-3. Push the `staging` branch; note its stable branch address
-   (`technoedge-assessment-git-staging-<scope>.vercel.app`).
-4. Settings → Environment Variables, environment **Preview**, branch `staging`: set every
-   variable in `.env.staging.example`. `APP_URL` is the branch address from step 3.
-   Secrets (`GRAPH_CLIENT_SECRET`, `RESEND_API_KEY`, `IDENTITY_PEPPER`) are typed in by the owner.
-5. Redeploy `staging` and open `/api/health`.
+Production settings live in Vercel (Production environment). Non-secret values match
+`.env.staging.example` except `APP_URL=https://technoedge-assessment.vercel.app` and
+`GRAPH_STORAGE_ROOT=TechnoEdgeAssessmentROI/Production`. Secrets (`GRAPH_CLIENT_SECRET`,
+`RESEND_API_KEY`, `IDENTITY_PEPPER`) are entered by the owner only.
 
-The build runs typecheck, unit tests, materials verification and `next build`. Tests ignore
-deployment variables, so the real settings never leak into them.
+The host allowlist lives at
+`Assessment Records/TechnoEdgeAssessmentROI/Production/config/host-allowlist.json`.
 
 ## Go-live steps (all need account owners)
 
