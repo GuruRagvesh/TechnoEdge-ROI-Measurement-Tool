@@ -91,6 +91,7 @@ export const catalogue: Record<
     ],
   },
 };
+import type { OptionLayout } from "./types";
 export type Question = { prompt: string; options: string[] };
 type PrivateQuestion = Question & { correct: number; explanation: string };
 export const regions = ["NORTH", "SOUTH", "EAST", "WEST"];
@@ -206,14 +207,95 @@ function question(
   );
   return { prompt, options: ordered.map(format), correct, explanation };
 }
-export function answerKey(phase: Phase): Record<TaskId, PrivateQuestion[]> {
+export const CURRENT_OPTION_LAYOUT: OptionLayout = "balanced-v2";
+export const layoutOf = (room: { optionLayout?: OptionLayout }): OptionLayout =>
+  room.optionLayout ?? "sequential-v1";
+// Deterministic PRNG (FNV-1a seed, mulberry32): the same question always gets
+// the same options on every server, so saved answer indices stay valid.
+function seeded(text: string) {
+  let h = 2166136261;
+  for (let i = 0; i < text.length; i++) {
+    h ^= text.charCodeAt(i);
+    h = Math.imul(h, 16777619);
+  }
+  return () => {
+    h = (h + 0x6d2b79f5) | 0;
+    let t = Math.imul(h ^ (h >>> 15), 1 | h);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+// balanced-v2: the correct value is unchanged. Distractors sit at independent
+// random gaps of 4-16%, rounded to the same precision as the answer (so a
+// round answer is not the only round option), with `below` of them under the
+// answer and the rest above. Options are shown in ascending order, so the
+// answer's position is `below`, which varies by question.
+function balancedQuestion(
+  prompt: string,
+  value: number,
+  explanation: string,
+  seed: string,
+  below: number,
+  format: (v: number) => string = String,
+): PrivateQuestion {
+  const rnd = seeded(seed);
+  let unit = 1;
+  while (value !== 0 && value % (unit * 10) === 0) unit *= 10;
+  const step = () =>
+    Math.max(1, Math.round((Math.abs(value) * (0.04 + rnd() * 0.12)) / unit)) *
+    unit;
+  // A positive count or amount only gets positive distractors.
+  if (value > 0) below = Math.min(below, Math.ceil(value / unit) - 1);
+  const lower: number[] = [],
+    upper: number[] = [];
+  for (let v = value, i = 0; i < below; i++) {
+    v -= step();
+    if (value > 0 && v <= 0) break;
+    lower.push(v);
+  }
+  for (let v = value; lower.length + upper.length < 3;)
+    upper.push((v += step()));
+  const values = [...lower.reverse(), value, ...upper];
+  return {
+    prompt,
+    options: values.map(format),
+    correct: lower.length,
+    explanation,
+  };
+}
+// Target answer positions per task: seeded, with no position used by more
+// than two of a task's four questions and no straight A-B-C-D run.
+function positions(phase: Phase): number[][] {
+  return [0, 1, 2, 3, 4].map((task) => {
+    const rnd = seeded(`${phase}|positions|${task}`);
+    for (;;) {
+      const p = [0, 1, 2, 3].map(() => Math.floor(rnd() * 4));
+      const counts = [0, 1, 2, 3].map((x) => p.filter((y) => y === x).length);
+      const run = p.join("");
+      if (Math.max(...counts) <= 2 && run !== "0123" && run !== "3210")
+        return p;
+    }
+  });
+}
+export function answerKey(
+  phase: Phase,
+  layout: OptionLayout = CURRENT_OPTION_LAYOUT,
+): Record<TaskId, PrivateQuestion[]> {
   const d = dataset(phase);
   const urgent = d.emails.filter((x) => x.priority === "Urgent");
   const revenue = sum(d.sales, (x) => x.revenue);
   const cost = sum(d.sales, (x) => x.cost);
   const base = phase === "pre" ? 0 : 1;
-  const q = (p: string, v: number, e: string, i: number) =>
-    question(p, v, e, i + base);
+  // Tasks are built in a fixed order below; each task's first question (i = 0)
+  // advances to that task's row of target positions.
+  const targets = positions(phase);
+  let task = -1;
+  const q = (p: string, v: number, e: string, i: number) => {
+    if (i === 0) task++;
+    return layout === "sequential-v1"
+      ? question(p, v, e, i + base)
+      : balancedQuestion(p, v, e, `${phase}|${i}|${p}|${v}`, targets[task][i]);
+  };
   return {
     inbox: [
       q(
@@ -358,8 +440,8 @@ export function answerKey(phase: Phase): Record<TaskId, PrivateQuestion[]> {
     ],
   };
 }
-export function publicTasks(phase: Phase) {
-  const key = answerKey(phase);
+export function publicTasks(phase: Phase, layout?: OptionLayout) {
+  const key = answerKey(phase, layout);
   return (Object.keys(catalogue) as TaskId[]).map((id) => ({
     id,
     ...catalogue[id],
@@ -370,8 +452,9 @@ export function mark(
   phase: Phase,
   answers: Partial<Record<TaskId, number[]>>,
   selected: TaskId[],
+  layout?: OptionLayout,
 ) {
-  const key = answerKey(phase);
+  const key = answerKey(phase, layout);
   return Object.fromEntries(
     selected.map((id) => [
       id,

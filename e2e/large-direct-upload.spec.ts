@@ -183,7 +183,8 @@ test("large Office uploads: browser sends chunks to Microsoft, reload resumes, a
   });
   await expect(
     page.locator(".evidence-file").filter({ hasText: "large-dashboard.xlsx" }),
-  ).toBeVisible();
+    // Hashing and uploading ~20 MiB can exceed 15 s on a cold dev server.
+  ).toBeVisible({ timeout: 45000 });
   await page.getByRole("tab", { name: /MBR Deadline/ }).click();
   await page.getByLabel("Upload evidence").setInputFiles({
     name: "large-review.pptx",
@@ -193,7 +194,8 @@ test("large Office uploads: browser sends chunks to Microsoft, reload resumes, a
   });
   await expect(
     page.locator(".evidence-file").filter({ hasText: "large-review.pptx" }),
-  ).toBeVisible();
+    // Hashing and uploading ~20 MiB can exceed 15 s on a cold dev server.
+  ).toBeVisible({ timeout: 45000 });
   const record = (await (await page.request.get(`/api/rooms/${room}`)).json())
     .participant;
   expect(record.evidence).toHaveLength(2);

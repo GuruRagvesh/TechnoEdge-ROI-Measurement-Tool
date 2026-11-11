@@ -3,11 +3,11 @@ import { randomUUID } from "node:crypto";
 import ExcelJS from "exceljs";
 import { AssessmentService } from "../src/lib/assessment";
 import { metrics } from "../src/lib/metrics";
-import { answerKey } from "../src/lib/challenges";
+import { answerKey, mark } from "../src/lib/challenges";
 import { excelReport } from "../src/lib/reports";
 import { materials } from "../src/lib/materials";
 import { MemoryStorage, attendee, host } from "./helpers";
-import type { TaskId } from "../src/lib/types";
+import type { Room, TaskId } from "../src/lib/types";
 
 describe("single-round release: one 60-minute attempt, three of five", () => {
   let store: MemoryStorage, service: AssessmentService, now: number;
@@ -271,5 +271,87 @@ describe("single-round release: one 60-minute attempt, three of five", () => {
     const readme = await zip.file("READ_ME.txt")!.async("string");
     expect(readme).toContain("One attempt per participant.");
     expect(readme).not.toMatch(/Summit|Pre-AI|Post-AI|\| PRE/);
+  });
+});
+
+const selected: TaskId[] = ["inbox", "tables", "mbr"];
+describe("balanced-v2 answer options", () => {
+  const phases = ["pre", "post"] as const;
+  it("keeps every correct value, with four distinct ascending options", () => {
+    for (const phase of phases) {
+      const before = answerKey(phase, "sequential-v1"),
+        after = answerKey(phase, "balanced-v2");
+      for (const t of Object.keys(after) as TaskId[])
+        after[t].forEach((q, i) => {
+          const old = before[t][i];
+          expect(q.options[q.correct]).toBe(old.options[old.correct]);
+          expect(q.prompt).toBe(old.prompt);
+          const n = q.options.map(Number);
+          expect(new Set(n).size).toBe(4);
+          expect(n).toEqual([...n].sort((a, b) => a - b));
+        });
+    }
+  });
+  it("leaves no position or rounding pattern", () => {
+    const all: number[] = [];
+    for (const phase of phases)
+      for (const qs of Object.values(answerKey(phase, "balanced-v2"))) {
+        const pos = qs.map((q) => q.correct);
+        all.push(...pos);
+        for (const x of [0, 1, 2, 3])
+          expect(pos.filter((y) => y === x).length).toBeLessThanOrEqual(2);
+        expect(pos.join("")).not.toBe("0123");
+        for (const q of qs) {
+          // A distractor is never less round than the answer.
+          const v = Number(q.options[q.correct]);
+          let unit = 1;
+          while (v !== 0 && v % (unit * 10) === 0) unit *= 10;
+          for (const o of q.options) expect(Number(o) % unit).toBe(0);
+        }
+      }
+    for (const x of [0, 1, 2, 3])
+      expect(all.filter((y) => y === x).length).toBeGreaterThanOrEqual(6);
+  });
+  it("is identical on every call, so saved answer indices stay valid", () => {
+    expect(answerKey("pre", "balanced-v2")).toEqual(
+      answerKey("pre", "balanced-v2"),
+    );
+  });
+  it("marks a room created before balanced-v2 with its original layout", async () => {
+    let clock = Date.parse("2026-11-11T09:00:00Z");
+    const store = new MemoryStorage(),
+      service = new AssessmentService(store, () => clock);
+    const legacy: Room = {
+      id: "legacy-room",
+      name: "AI Productivity Benchmark",
+      phase: "pre",
+      durationMinutes: 60,
+      ownerId: host.id,
+      batch: "Earlier cohort",
+      createdAt: "2026-11-01T00:00:00Z",
+      closed: false,
+      scoringVersion: "corporate-60-v1",
+    };
+    await store.write(
+      "rooms/legacy-room/room.json",
+      Buffer.from(JSON.stringify(legacy)),
+      null,
+    );
+    const old = answerKey("pre", "sequential-v1");
+    await service.join("legacy-room", attendee);
+    let p = await service.start("legacy-room", attendee.id, selected);
+    p = await service.save("legacy-room", attendee.id, {
+      revision: p.revision,
+      answers: Object.fromEntries(
+        selected.map((t) => [t, old[t].map((q) => q.correct)]),
+      ),
+      notes: {},
+      completed: [],
+    });
+    clock += 61 * 60000; // the deadline finalizes and marks the saved answers
+    p = (await service.participant("legacy-room", attendee.id))!;
+    expect(p.submissionReason).toBe("deadline");
+    expect(p.mcq).toEqual({ inbox: 4, tables: 4, mbr: 4 });
+    expect(mark("pre", p.answers, selected, "sequential-v1")).toEqual(p.mcq);
   });
 });

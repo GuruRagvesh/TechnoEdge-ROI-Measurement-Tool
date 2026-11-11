@@ -14,7 +14,19 @@ jobs:
       - run: npm test
       - run: npm run materials:verify
       - run: npm run build
-      - run: npx playwright install --with-deps chromium
+      # Browser and system libraries for the pinned @playwright/test version.
+      # If Ubuntu's package mirrors are unreachable (GitHub runner DNS outage),
+      # install the browser alone; the next step must then prove it launches,
+      # so missing libraries still fail the job before the tests.
+      - name: Install Playwright Chromium
+        run: |
+          if timeout 420 npx playwright install --with-deps chromium; then
+            exit 0
+          fi
+          echo "::warning::System dependency install failed; installing the Playwright browser only."
+          npx playwright install chromium
+      - name: Verify Chromium launches
+        run: node -e "require('@playwright/test').chromium.launch().then(async b => { console.log('Chromium', b.version()); await b.close(); })"
       - run: npm run test:e2e
       - uses: actions/upload-artifact@v4
         if: failure()

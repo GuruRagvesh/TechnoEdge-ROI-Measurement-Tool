@@ -11,7 +11,7 @@ import {
   type TaskId,
 } from "./types";
 import { createJson, getJson, mutate, type Storage } from "./storage";
-import { mark } from "./challenges";
+import { CURRENT_OPTION_LAYOUT, layoutOf, mark } from "./challenges";
 import { assessmentMode, evidenceLimitMB } from "./config";
 import { metrics } from "./metrics";
 export const roomKey = (id: string) => `rooms/${id}/room.json`;
@@ -25,6 +25,7 @@ export class AssessmentService {
   async defaultRoom() {
     return createJson<Room>(this.store, roomKey("ai-productivity-pre"), {
       scoringVersion: "corporate-60-v1",
+      optionLayout: CURRENT_OPTION_LAYOUT,
       id: "ai-productivity-pre",
       name: "AI Productivity Benchmark",
       phase: "pre",
@@ -84,6 +85,7 @@ export class AssessmentService {
       ownerId: host.id,
       createdAt: iso(),
       closed: false,
+      optionLayout: CURRENT_OPTION_LAYOUT,
     };
     await createJson(this.store, roomKey(id), room);
     // Host index is separate from participant records; concurrent creation merges with CAS.
@@ -145,6 +147,7 @@ export class AssessmentService {
         createdAt: program.createdAt,
         closed: phase === "post",
         scoringVersion: "corporate-60-v1",
+        optionLayout: CURRENT_OPTION_LAYOUT,
         ...(phase === "post" ? { preRoomId: program.preRoomId } : {}),
         ...(host.testAccount
           ? { dataClassification: "synthetic-test" as const }
@@ -321,7 +324,7 @@ export class AssessmentService {
     });
     return {
       ...p,
-      mcq: mark(room.phase, p.answers, p.selected),
+      mcq: mark(room.phase, p.answers, p.selected, layoutOf(room)),
       submittedAt,
       submissionReason: reason,
       revision: p.revision + 1,

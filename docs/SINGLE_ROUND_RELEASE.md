@@ -1,7 +1,7 @@
 # Single-round release (11 Nov 2026)
 
 Status: **code complete and verified locally. NOT LIVE.** No hosted deployment, SharePoint
-connection or real OTP email has been verified.
+connection or real OTP email has been verified yet.
 
 ## What changed
 
@@ -20,11 +20,32 @@ connection or real OTP email has been verified.
 `ASSESSMENT_MODE=paired` restores Base Camp + Summit creation. Existing paired rooms, records,
 exports and the legacy 100-point scoring are untouched in either mode.
 
-## Known issue to decide before real participants
+## Answer options (balanced-v2)
 
-Correct MCQ options follow a fixed pattern (`src/lib/challenges.ts`, `correct = index % 4`):
-in every Base Camp challenge the right answers are options 1, 2, 3, 4 in order, and the correct
-value is always the second-smallest option. Values are right; positions are guessable.
+Rooms created from this release use `optionLayout: balanced-v2`. Every correct value is unchanged.
+Distractors are seeded per question at independent 4-16% gaps, rounded to the answer's precision,
+and options are shown in ascending order, so the correct position varies (A/B/C/D = 10/9/10/11
+over the 40 questions; no task uses one position more than twice). Rooms created earlier have no
+`optionLayout` and keep the original sequential order, so their saved answers still mark correctly.
+The Excel export and host answer key state which layout a room uses.
+
+## Protected Vercel staging
+
+`vercel.json` disables deployments of `main` and skips every build except the `staging` branch.
+Staging is therefore a Preview deployment, which Vercel Authentication protects by default.
+On the Hobby plan the production address is never protected, so nothing deploys to production.
+
+1. Import the repository in Vercel (project name `technoedge-assessment`).
+2. Settings → Deployment Protection: confirm Vercel Authentication is on.
+3. Push the `staging` branch; note its stable branch address
+   (`technoedge-assessment-git-staging-<scope>.vercel.app`).
+4. Settings → Environment Variables, environment **Preview**, branch `staging`: set every
+   variable in `.env.staging.example`. `APP_URL` is the branch address from step 3.
+   Secrets (`GRAPH_CLIENT_SECRET`, `RESEND_API_KEY`, `IDENTITY_PEPPER`) are typed in by the owner.
+5. Redeploy `staging` and open `/api/health`.
+
+The build runs typecheck, unit tests, materials verification and `next build`. Tests ignore
+deployment variables, so the real settings never leak into them.
 
 ## Go-live steps (all need account owners)
 
