@@ -74,6 +74,8 @@ async function finish(page: Page, phase: "pre" | "post") {
         .getByRole("radio")
         .nth(i * 4 + answerKey(phase)[tasks[t]][i].correct)
         .check();
+    // Completion stays unavailable until the server holds evidence.
+    await expect(page.getByLabel("Mark this challenge complete")).toBeDisabled();
     await page
       .getByLabel("Upload evidence")
       .setInputFiles({
@@ -90,6 +92,22 @@ async function finish(page: Page, phase: "pre" | "post") {
     await expect(page.locator(".save-status")).toContainText(
       "All changes saved",
     );
+    if (t === 0) {
+      // Unticking before submission persists, and ticking again restores it.
+      await page.getByLabel("Mark this challenge complete").uncheck();
+      await expect(page.locator(".save-status")).toContainText(
+        "All changes saved",
+      );
+      await page.reload();
+      await page.getByRole("tab", { name: new RegExp(titles[t]) }).click();
+      await expect(
+        page.getByLabel("Mark this challenge complete"),
+      ).not.toBeChecked();
+      await page.getByLabel("Mark this challenge complete").check();
+      await expect(page.locator(".save-status")).toContainText(
+        "All changes saved",
+      );
+    }
   }
   await page
     .getByRole("button", { name: "Submit assessment", exact: true })
@@ -100,6 +118,13 @@ async function finish(page: Page, phase: "pre" | "post") {
   await expect(page).toHaveURL(/\/attendee\/attempt\/[^/]+\/review$/);
   await page.reload();
   await expect(page.getByRole("heading",{name:"Review before submission"})).toBeVisible();
+  // The checklist is read from the saved server record.
+  const review = page.getByRole("dialog");
+  await expect(review.getByText("Questions saved: 4 / 4")).toHaveCount(3);
+  await expect(review.getByText(/^✓ Marked complete$/)).toHaveCount(3);
+  for (let t = 0; t < 3; t++)
+    await expect(review.getByText(tasks[t] + "-result.csv", { exact: false })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Submit & lock assessment" })).toBeEnabled();
   await page.getByRole("button", { name: "Submit & lock assessment" }).click();
   await expect(
     page.getByRole("heading", { name: "Submission received" }),
