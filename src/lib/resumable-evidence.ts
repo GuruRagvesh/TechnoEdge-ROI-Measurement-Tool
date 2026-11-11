@@ -125,8 +125,10 @@ export class ResumableEvidence {
     });
     if (current.size !== input.size || current.sha256 !== input.sha256)
       throw new AppError(409, "Upload metadata changed");
+    // SharePoint creates an empty placeholder as soon as an upload session
+    // opens, so a 0-byte file means "not uploaded yet", not "committed".
     const size = await this.backend.evidenceFileSize(path);
-    if (size !== null) {
+    if (size !== null && size !== 0) {
       if (size !== input.size)
         throw new AppError(
           409,
@@ -202,7 +204,7 @@ export class ResumableEvidence {
     const intent = await this.intent(room, who, id);
     await this.active(room, who, intent.task);
     const size = await this.backend.evidenceFileSize(intent.path);
-    if (size !== null) {
+    if (size !== null && size !== 0) {
       if (size !== intent.size)
         throw new AppError(409, "Uploaded size mismatch");
       return { committed: true, offset: size };

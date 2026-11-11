@@ -453,7 +453,10 @@ export class GraphStorage implements Storage {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           // Annotation first, as in write(), which Graph accepts.
-          item: { "@microsoft.graph.conflictBehavior": "fail", name },
+          // "replace": the path is content-addressed per participant, task and
+          // checksum, so the only thing replaced is an empty placeholder left
+          // by an earlier, expired session for this same file.
+          item: { "@microsoft.graph.conflictBehavior": "replace", name },
         }),
       },
     );

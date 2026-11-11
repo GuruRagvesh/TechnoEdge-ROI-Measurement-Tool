@@ -15,6 +15,9 @@ class Backend implements DirectUploadBackend {
     this.created++;
     const uploadUrl = "https://test.up.1drv.com/" + randomUUID();
     this.sessions.set(uploadUrl, { path, offset: 0 });
+    // Like SharePoint: opening a session creates an empty placeholder file.
+    const existing = await this.store.read(path);
+    if (!existing) await this.store.write(path, Buffer.alloc(0), null);
     return {
       uploadUrl,
       expiresAt: new Date(Date.now() + 86400000).toISOString(),
@@ -32,7 +35,8 @@ class Backend implements DirectUploadBackend {
   }
   async commit(url: string, data: Buffer) {
     const s = this.sessions.get(url)!;
-    await this.store.write(s.path, data, null);
+    const placeholder = await this.store.read(s.path);
+    await this.store.write(s.path, data, placeholder?.etag ?? null);
     this.sessions.delete(url);
   }
 }

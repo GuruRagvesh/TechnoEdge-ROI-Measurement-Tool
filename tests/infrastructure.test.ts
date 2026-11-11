@@ -177,7 +177,7 @@ describe("live infrastructure contracts without live credentials", () => {
           JSON.parse(String(init?.body)).item[
             "@microsoft.graph.conflictBehavior"
           ],
-        ).toBe("fail");
+        ).toBe("replace"); // only an empty placeholder for the same content-addressed file can be replaced
         expect(new Headers(init?.headers).get("Authorization")).toBe(
           "Bearer private-server-token",
         );
