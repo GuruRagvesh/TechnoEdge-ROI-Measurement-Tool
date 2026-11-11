@@ -10,6 +10,9 @@ export default defineConfig({
     // Tests must not inherit a deployment's settings (Vercel runs them during the build).
     env: {
       ASSESSMENT_MODE: "paired",
+      // Vercel builds with NODE_ENV=production already set; tests that need
+      // production behaviour stub it themselves.
+      NODE_ENV: "test",
       ...Object.fromEntries(
         [
           "APP_URL",
