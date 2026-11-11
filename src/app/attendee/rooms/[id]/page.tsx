@@ -386,6 +386,12 @@ export default function Assessment({
                     ? "Your timer ended. All work saved before the deadline was submitted."
                     : "Your answers and evidence are locked and ready for evaluation."}
                 </p>
+                <p className="help">
+                  Submitted {new Date(p.submittedAt).toLocaleString()} ·{" "}
+                  {metrics(p).fullyGraded
+                    ? "Evaluation complete"
+                    : "Evaluation pending"}
+                </p>
               </div>
             </section>
             <div className="stats-grid">
@@ -861,6 +867,12 @@ export default function Assessment({
                     setBusy(true);
                     try {
                       await flush();
+                      // The checklist shows the server's record, not local state.
+                      const fresh = await api<Detail>(base);
+                      participantRef.current = fresh.participant;
+                      setDetail((d) =>
+                        d ? { ...d, participant: fresh.participant } : d,
+                      );
                       history.pushState(
                         null,
                         "",
@@ -894,38 +906,132 @@ export default function Assessment({
         ))}
       {confirmSubmit && !p.submittedAt && (
         <div className="submission-review">
-          <section className="panel" aria-labelledby="submit-title">
+          <section
+            className="panel"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="submit-title"
+            onKeyDown={(e) => {
+              if (e.key === "Escape" && !busy) {
+                history.replaceState(null, "", "/attendee/rooms/" + id);
+                setConfirmSubmit(false);
+              }
+            }}
+          >
             <LockKeyhole size={28} />
             <h2 id="submit-title">Review before submission</h2>
-            <ul>
-              {p.selected.map((t) => (
-                <li key={t}>
-                  <strong>{tasks.find((x) => x.id === t)?.title}</strong> ·{" "}
-                  {(draft.answers[t] || []).filter((x) => x >= 0).length}/4
-                  answers · {p.evidence.filter((e) => e.task === t).length}{" "}
-                  evidence file(s) ·{" "}
-                  {draft.completed.includes(t) ? "Complete" : "Incomplete"}
-                </li>
-              ))}
-            </ul>
+            <p className="help">
+              Checked against your saved record on the server · {minutes}:
+              {String(seconds).padStart(2, "0")} remaining
+            </p>
             <p>
-              Your answers and uploaded evidence will be locked for evaluation.
-              This action cannot be undone.
+              <strong>{p.selected.length} of 5</strong> challenges selected
+              {p.selected.length === 3 ? " ✓" : " (3 required)"}
+            </p>
+            <ul className="review-list">
+              {p.selected.map((t) => {
+                const answered = (p.answers[t] || []).filter(
+                    (x) => x >= 0,
+                  ).length,
+                  files = p.evidence.filter((e) => e.task === t),
+                  complete = !!p.taskCompletedAt[t];
+                return (
+                  <li key={t}>
+                    <strong>{tasks.find((x) => x.id === t)?.title}</strong>
+                    <span>
+                      {answered === 4 ? "✓" : "✗"} Questions saved: {answered} /
+                      4
+                    </span>
+                    <span>
+                      {files.length ? "✓" : "✗"} Evidence:{" "}
+                      {files.length
+                        ? files
+                            .map(
+                              (e) =>
+                                `${e.name} (${Math.max(1, Math.round(e.size / 1024))} KB, verified ${new Date(e.uploadedAt).toLocaleTimeString()})`,
+                            )
+                            .join(", ")
+                        : "no file received by the server"}
+                    </span>
+                    <span>
+                      {complete ? "✓" : "✗"}{" "}
+                      {complete ? "Marked complete" : "Not marked complete"}
+                    </span>
+                  </li>
+                );
+              })}
+            </ul>
+            {(() => {
+              const unsaved =
+                dirty ||
+                status !== "All changes saved" ||
+                !!uploadStatus.match(/Uploading|Checking|Verifying|preparing/i);
+              const missing = p.selected.filter(
+                (t) => !p.evidence.some((e) => e.task === t),
+              );
+              const incomplete = p.selected.filter(
+                (t) => !p.taskCompletedAt[t],
+              );
+              return (
+                <>
+                  <p className={unsaved ? "error" : "help"}>
+                    {unsaved
+                      ? `Answers: ${status}. Wait until everything is saved before submitting.`
+                      : `Answers: all changes saved${lastSaved ? " · last saved " + new Date(lastSaved).toLocaleTimeString() : ""}.`}
+                  </p>
+                  {missing.length > 0 && (
+                    <p className="error">
+                      No evidence for{" "}
+                      {missing
+                        .map((t) => tasks.find((x) => x.id === t)?.title)
+                        .join(", ")}
+                      . Upload it to complete the challenge. If time runs out, a
+                      challenge without evidence scores 0 of 8 practical marks.
+                    </p>
+                  )}
+                  {incomplete.length > 0 && (
+                    <p className="error">
+                      To submit, every selected challenge needs 4 saved answers,
+                      evidence and the &ldquo;Mark this challenge
+                      complete&rdquo; box ticked.
+                    </p>
+                  )}
+                  {locked && !p.submittedAt && (
+                    <p className="error">
+                      Time is up. Your saved work is being submitted
+                      automatically.
+                    </p>
+                  )}
+                </>
+              );
+            })()}
+            <p>
+              <strong>Submission is final.</strong> Your answers and evidence
+              will be locked for evaluation and cannot be changed or
+              resubmitted.
             </p>
             <div className="button-row">
               <button
                 className="button secondary"
+                autoFocus
                 disabled={busy}
                 onClick={() => {
                   history.replaceState(null, "", "/attendee/rooms/" + id);
                   setConfirmSubmit(false);
                 }}
               >
-                Keep working
+                Back to assessment
               </button>
               <button
                 className="button primary"
-                disabled={busy || locked || draft.completed.length !== 3}
+                disabled={
+                  busy ||
+                  locked ||
+                  dirty ||
+                  status !== "All changes saved" ||
+                  p.selected.length !== 3 ||
+                  p.selected.some((t) => !p.taskCompletedAt[t])
+                }
                 onClick={() => void submit()}
               >
                 {busy ? "Submitting…" : "Submit & lock assessment"}
