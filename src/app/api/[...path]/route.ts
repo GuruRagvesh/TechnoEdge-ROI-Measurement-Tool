@@ -27,7 +27,7 @@ import {
 } from "@/lib/config";
 import { LocalTestStorage } from "@/lib/local-test-storage";
 import { authenticateLocalTest } from "@/lib/local-test-auth";
-import { layoutOf, publicTasks } from "@/lib/challenges";
+import { answerKey, layoutOf, publicTasks } from "@/lib/challenges";
 import { keyWorkbook, materials } from "@/lib/materials";
 import { evidenceZip, excelReport } from "@/lib/reports";
 import { GraphStorage, getJson, storage } from "@/lib/storage";
@@ -399,12 +399,35 @@ async function route(req: NextRequest) {
   }
   await requireIdentity("host");
   service.assertHost(room, identity);
-  if (action === "participants" && method === "GET")
+  if (action === "participants" && method === "GET") {
+    const participants = await service.attendees(roomId, identity);
+    // Host-only aggregate for the dashboard: per question, how many submitted
+    // answers there are and how many are correct. Counts only, never the key.
+    const key = answerKey(room.phase, layoutOf(room));
+    const questionStats = Object.fromEntries(
+      Object.entries(key).map(([t, questions]) => [
+        t,
+        questions.map((q, i) => {
+          let answered = 0,
+            correct = 0;
+          for (const p of participants) {
+            const a = p.submittedAt ? p.answers[t as TaskId]?.[i] : undefined;
+            if (a !== undefined && a >= 0) {
+              answered++;
+              if (a === q.correct) correct++;
+            }
+          }
+          return { answered, correct };
+        }),
+      ]),
+    );
     return json({
       room,
-      participants: await service.attendees(roomId, identity),
+      participants,
+      questionStats,
       tasks: publicTasks(room.phase, layoutOf(room)),
     });
+  }
   if (action === "grade" && method === "POST") {
     const input = z
       .object({
