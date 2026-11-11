@@ -550,7 +550,12 @@ export class AssessmentService {
       `rooms/${roomId}/upload-intents/${randomUUID()}.json`,
       { path: key, participantId: id, at: iso() },
     );
-    if (committedPath && committedPath !== key)
+    // Direct SharePoint uploads store the same name with ".bin" appended.
+    if (
+      committedPath &&
+      committedPath !== key &&
+      committedPath !== key + ".bin"
+    )
       throw new AppError(400, "Uploaded evidence path mismatch");
     // A direct upload has already been read and verified by the resumable finalizer.
     if (!committedPath)
@@ -578,7 +583,8 @@ export class AssessmentService {
             name: name.replace(/[^a-zA-Z0-9_. -]/g, "_").slice(0, 100),
             size: data.length,
             sha256: hash,
-            path: key,
+            // The path actually written (direct uploads add ".bin").
+            path: committedPath || key,
             uploadedAt: iso(),
             contentType: "application/octet-stream",
           },

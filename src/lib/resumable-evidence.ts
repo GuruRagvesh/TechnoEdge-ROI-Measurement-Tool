@@ -109,7 +109,10 @@ export class ResumableEvidence {
       .update(who.id + ":" + input.task + ":" + input.sha256 + ":" + ext)
       .digest("hex");
     const key = this.key(room, who.id, id),
-      path = `rooms/${room}/evidence/${who.id}/${input.sha256}-${input.task}.${ext}`;
+      // ".bin": SharePoint rewrites Office files (.xlsx/.pptx/.docx) when they
+      // are saved into a library, which breaks the size/checksum verification.
+      // The participant's original filename is kept in the evidence record.
+      path = `rooms/${room}/evidence/${who.id}/${input.sha256}-${input.task}.${ext}.bin`;
     // Reserve one bounded, durable slot. Re-selecting this same file reuses the slot and session.
     await this.service().reserveUpload(room, who.id, input.task, id);
     let current = await createJson<Intent>(this.store, key, {

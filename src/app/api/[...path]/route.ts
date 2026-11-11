@@ -283,7 +283,13 @@ async function route(req: NextRequest) {
         })
         .strict()
         .parse(await body(req));
-      return json(await uploads.begin(roomId, identity, input));
+      GraphStorage.slowCalls.length = 0;
+      const started = await uploads.begin(roomId, identity, input);
+      const res = json(started);
+      // Diagnostics only: slow storage step types and timings, no identifiers.
+      if (GraphStorage.slowCalls.length)
+        res.headers.set("X-Storage-Slow", GraphStorage.slowCalls.join("; "));
+      return res;
     }
     const input = z
       .object({ uploadId: z.string().regex(/^[a-f0-9]{64}$/) })

@@ -245,11 +245,27 @@ export function DownloadLink({
                 )
               )
                 throw new Error("Invalid download address");
-              const link = document.createElement("a");
-              link.href = u.href;
-              link.download = result.name;
-              link.rel = "noreferrer";
-              link.click();
+              // Save under the participant's original filename; the stored
+              // SharePoint name differs. Fall back to opening the link.
+              try {
+                const file = await fetch(u.href, {
+                  credentials: "omit",
+                  referrerPolicy: "no-referrer",
+                });
+                if (!file.ok) throw new Error("download");
+                const objectUrl = URL.createObjectURL(await file.blob()),
+                  a = document.createElement("a");
+                a.href = objectUrl;
+                a.download = result.name;
+                a.click();
+                setTimeout(() => URL.revokeObjectURL(objectUrl), 30000);
+              } catch {
+                const link = document.createElement("a");
+                link.href = u.href;
+                link.download = result.name;
+                link.rel = "noreferrer";
+                link.click();
+              }
               return;
             }
             const url = URL.createObjectURL(await r.blob()),

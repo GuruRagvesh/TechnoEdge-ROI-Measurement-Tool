@@ -89,6 +89,14 @@ describe("authorized durable direct-upload intents", () => {
     const p = await uploads.complete(room, attendee, a.uploadId);
     expect(p.evidence).toHaveLength(1);
     expect(p.evidence[0].sha256).toBe(sha(data));
+    // The record points at the file actually stored (".bin" added), so
+    // downloads, grading and archives read the same bytes; the original
+    // filename is kept for the person downloading it.
+    expect(p.evidence[0].path.endsWith("-inbox.csv.bin")).toBe(true);
+    expect((await store.read(p.evidence[0].path))!.data.equals(data)).toBe(
+      true,
+    );
+    expect(p.evidence[0].name.endsWith(".csv")).toBe(true);
     const again = await new ResumableEvidence(
       store,
       backend,
@@ -115,7 +123,7 @@ describe("authorized durable direct-upload intents", () => {
       k.includes("resumable-intents"),
     );
     expect(JSON.parse(store.files.get(intents[0])!.data.toString()).path).toBe(
-      `rooms/${room}/evidence/${attendee.id}/${sha(data)}-inbox.csv`,
+      `rooms/${room}/evidence/${attendee.id}/${sha(data)}-inbox.csv.bin`,
     );
   });
   it("rejects uploads over 25 MiB before issuing a Microsoft session", async () => {

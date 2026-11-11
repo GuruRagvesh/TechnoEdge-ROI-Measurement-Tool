@@ -280,7 +280,43 @@ export class GraphStorage implements Storage {
   async probeLocation(key: string) {
     return this.location(this.physical(key));
   }
+  // Diagnostics: Graph calls slower than 3 s, as "METHOD step-type ms status".
+  // No IDs, paths, URLs or tokens are recorded.
+  static slowCalls: string[] = [];
   async request(
+    url: string,
+    init: RequestInit = {},
+    authenticated = true,
+  ): Promise<Response> {
+    const started = Date.now();
+    let status = "error";
+    try {
+      const r = await this.requestOnce(url, init, authenticated);
+      status = String(r.status);
+      return r;
+    } finally {
+      const ms = Date.now() - started;
+      if (ms > 3000) {
+        const u = new URL(url),
+          step = !authenticated
+            ? "upload-session"
+            : /createUploadSession/.test(u.pathname)
+              ? "createUploadSession"
+              : /\/children$/.test(u.pathname)
+                ? "create-folder"
+                : /\/content$/.test(u.pathname)
+                  ? "content"
+                  : /\/sites\/[^/]+$/.test(u.pathname)
+                    ? "site-check"
+                    : "item-metadata";
+        GraphStorage.slowCalls.push(
+          `${init.method || "GET"} ${step} ${ms}ms ${status}`,
+        );
+        if (GraphStorage.slowCalls.length > 20) GraphStorage.slowCalls.shift();
+      }
+    }
+  }
+  private async requestOnce(
     url: string,
     init: RequestInit = {},
     authenticated = true,
