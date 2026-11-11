@@ -11,12 +11,15 @@ import {
   type Evidence,
 } from "./types";
 import { getJson } from "./storage";
+import { ANSWER_KEY_VERSION, MATERIAL_VERSION } from "./config";
 export async function excelReport(
   service: AssessmentService,
   room: Room,
   host: Identity,
   onSaved?: (key: string) => void,
-) {
+): Promise<Buffer> {
+  if (room.mode === "single")
+    return singleRoundReport(service, room, host, onSaved);
   const participants = await service.attendees(room.id, host),
     wb = new ExcelJS.Workbook();
   wb.creator = "TechnoEdge Learning Services";
@@ -284,6 +287,304 @@ export async function excelReport(
         to: { row: sheet.rowCount, column: sheet.columnCount },
       };
   }
+  const data = Buffer.from(await wb.xlsx.writeBuffer());
+  const file = `rooms/${room.id}/reports/${Date.now()}-${randomUUID()}.xlsx`;
+  await service.store.write(file, data, null);
+  onSaved?.(file);
+  return data;
+}
+const STATUS = (p: Participant, fullyGraded: boolean) =>
+  !p.submittedAt
+    ? p.startedAt
+      ? "IN_PROGRESS"
+      : "READY"
+    : p.submissionReason === "deadline"
+      ? "EXPIRED"
+      : fullyGraded
+        ? "FINALIZED"
+        : "AWAITING_EVALUATION";
+// Single-round export: six sheets built from the canonical participant records.
+async function singleRoundReport(
+  service: AssessmentService,
+  room: Room,
+  host: Identity,
+  onSaved?: (key: string) => void,
+) {
+  const participants = await service.attendees(room.id, host),
+    wb = new ExcelJS.Workbook(),
+    generated = new Date().toISOString();
+  wb.creator = "TechnoEdge Learning Services";
+  wb.created = new Date();
+  const people = wb.addWorksheet("Participants");
+  people.addRow([
+    "Participant ID",
+    "Participant name",
+    "Verified email",
+    "Company",
+    "Cohort",
+    "Room code",
+    "Email verified (UTC)",
+    "Attempt started (UTC)",
+    "Deadline (UTC)",
+    "Submitted (UTC)",
+    "Expired (UTC)",
+    "Status",
+    "Selected challenges",
+    "Challenges completed",
+  ]);
+  const answers = wb.addWorksheet("Question Answers");
+  answers.addRow([
+    "Participant ID",
+    "Participant name",
+    "Challenge ID",
+    "Question ID",
+    "Question",
+    "Chosen option",
+    "Chosen answer",
+    "Correct option",
+    "Correct answer",
+    "Correct",
+    "Marks",
+    "Maximum marks",
+    "Saved (UTC)",
+    "Answer key version",
+  ]);
+  const results = wb.addWorksheet("Challenge Results");
+  results.addRow([
+    "Participant ID",
+    "Participant name",
+    "Challenge ID",
+    "Challenge",
+    "MCQ subtotal (0-12)",
+    "Practical subtotal (0-8)",
+    "Total (0-20)",
+    "Completeness (0-3)",
+    "Accuracy (0-3)",
+    "Presentation (0-2)",
+    "Evidence status",
+    "Graded by",
+    "Graded (UTC)",
+    "Grading notes",
+  ]);
+  const overall = wb.addWorksheet("Overall Results");
+  overall.addRow([
+    "Participant ID",
+    "Participant name",
+    "Selected challenges",
+    "Challenges completed",
+    "MCQ marks (0-36)",
+    "Practical marks (0-24)",
+    "Raw marks out of 60",
+    "Percentage",
+    "Grade status",
+    "Attempt status",
+    "Elapsed minutes",
+    "Finalized (UTC)",
+    "Scoring version",
+  ]);
+  const log = wb.addWorksheet("Evidence Log");
+  log.addRow([
+    "Participant ID",
+    "Participant name",
+    "Event",
+    "Challenge ID",
+    "File name",
+    "File type",
+    "Size (bytes)",
+    "SHA-256",
+    "Protected storage reference",
+    "Confirmed (UTC)",
+  ]);
+  const key = answerKey(room.phase);
+  for (const p of participants) {
+    const m = metrics(p),
+      status = STATUS(p, m.fullyGraded),
+      registered = await getJson<{ verifiedAt?: string }>(
+        service.store,
+        `identities/${p.identity.id}.json`,
+      );
+    people.addRow([
+      p.identity.id,
+      p.identity.name,
+      p.identity.email,
+      room.company,
+      room.batch,
+      room.id,
+      registered?.verifiedAt ?? null,
+      p.startedAt,
+      p.deadline,
+      p.submissionReason === "manual" ? p.submittedAt : null,
+      p.submissionReason === "deadline" ? p.submittedAt : null,
+      status,
+      p.selected.join(", "),
+      m.completed,
+    ]);
+    let gradedAt = "";
+    for (const id of p.selected) {
+      const g = p.grades[id],
+        files = p.evidence.filter((e) => e.task === id).length,
+        mcqMarks = p.submittedAt ? (p.mcq[id] || 0) * 3 : null,
+        practical = g ? g.accuracy + g.quality + g.completeness : null;
+      if (g && g.at > gradedAt) gradedAt = g.at;
+      results.addRow([
+        p.identity.id,
+        p.identity.name,
+        id,
+        catalogue[id].title,
+        mcqMarks,
+        practical ?? (p.submittedAt ? "Pending" : null),
+        mcqMarks !== null && practical !== null
+          ? mcqMarks + practical
+          : p.submittedAt
+            ? "Pending"
+            : null,
+        g?.completeness,
+        g?.accuracy,
+        g?.quality,
+        files ? `${files} file(s) received` : "No evidence submitted",
+        g ? (g.automatic ? "System (no-evidence policy)" : g.graderId) : null,
+        g?.at,
+        g?.feedback,
+      ]);
+      key[id].forEach((q, i) => {
+        const a = p.answers[id]?.[i];
+        if (a === undefined || a < 0) return;
+        answers.addRow([
+          p.identity.id,
+          p.identity.name,
+          id,
+          `${id}-q${i + 1}`,
+          q.prompt,
+          a + 1,
+          q.options[a],
+          q.correct + 1,
+          q.options[q.correct],
+          a === q.correct ? "Yes" : "No",
+          a === q.correct ? 3 : 0,
+          3,
+          p.answerSavedAt?.[id]?.[i] ?? p.lastSeenAt,
+          ANSWER_KEY_VERSION,
+        ]);
+      });
+    }
+    overall.addRow([
+      p.identity.id,
+      p.identity.name,
+      p.selected.join(", "),
+      m.completed,
+      p.submittedAt ? m.mcqMarks : null,
+      m.fullyGraded ? m.practical : null,
+      m.score ?? (p.submittedAt ? "Pending" : null),
+      m.score !== null ? Math.round((m.score / 60) * 1000) / 10 : null,
+      !p.submittedAt
+        ? "Not submitted"
+        : m.fullyGraded
+          ? "Final"
+          : p.selected.length !== 3
+            ? "No challenges selected before expiry"
+            : "Pending practical evaluation",
+      status,
+      m.minutes !== null ? Math.round(m.minutes * 10) / 10 : null,
+      m.fullyGraded ? gradedAt || p.submittedAt : null,
+      m.scoringVersion,
+    ]);
+    if (p.startedAt)
+      log.addRow([
+        p.identity.id,
+        p.identity.name,
+        "Attempt started",
+        ...Array(6).fill(null),
+        p.startedAt,
+      ]);
+    for (const e of p.evidence)
+      log.addRow([
+        p.identity.id,
+        p.identity.name,
+        "Evidence upload confirmed",
+        e.task,
+        e.name,
+        e.name.split(".").pop()?.toLowerCase(),
+        e.size,
+        e.sha256,
+        e.path,
+        e.uploadedAt,
+      ]);
+    if (p.submittedAt)
+      log.addRow([
+        p.identity.id,
+        p.identity.name,
+        p.submissionReason === "deadline"
+          ? "Attempt expired at deadline; saved work locked"
+          : "Final submission by participant",
+        ...Array(6).fill(null),
+        p.submittedAt,
+      ]);
+  }
+  const dictionary = wb.addWorksheet("Data Dictionary");
+  [
+    ["Item", "Meaning"],
+    ["Export generated (UTC)", generated],
+    ["Company / cohort", `${room.company} / ${room.batch}`],
+    ["Room code", room.id],
+    ["Scoring version", room.scoringVersion || "legacy-100"],
+    ["Material version", MATERIAL_VERSION],
+    ["Answer key version", ANSWER_KEY_VERSION],
+    [
+      "Scoring",
+      "Three challenges x (4 MCQs x 3 marks = 12, plus practical evidence out of 8) = 60 marks.",
+    ],
+    [
+      "Practical rubric",
+      "Completeness 0-3, accuracy 0-3, presentation 0-2, entered by a TechnoEdge host.",
+    ],
+    [
+      "No-evidence policy",
+      "A selected challenge with no uploaded evidence receives 0 practical marks automatically at submission or expiry (graded by System).",
+    ],
+    [
+      "Expiry policy",
+      "At 60 minutes the attempt locks. Answers and evidence saved before the deadline are marked; unanswered questions score 0.",
+    ],
+    ["READY", "Joined; attempt not yet started."],
+    ["IN_PROGRESS", "Timer running; work not yet submitted."],
+    ["AWAITING_EVALUATION", "Submitted; practical marks not yet complete."],
+    ["FINALIZED", "Submitted and all three practical evaluations recorded."],
+    ["EXPIRED", "Timer ended before submission; saved work was locked."],
+    [
+      "Pending",
+      "Shown in place of a total or percentage until every practical evaluation is recorded.",
+    ],
+    [
+      "Times",
+      "All timestamps are UTC (ISO 8601). Elapsed minutes run from confirmed join to submission or deadline.",
+    ],
+    [
+      "Scope",
+      "One assessment round. This export contains no Pre/Post comparison and no modeled ROI.",
+    ],
+    [
+      "Correct option",
+      "Answer keys appear in this host export only; they are never sent to attendees.",
+    ],
+  ].forEach((row) => dictionary.addRow(row));
+  for (const sheet of wb.worksheets) {
+    sheet.views = [{ state: "frozen", ySplit: 1 }];
+    sheet.getRow(1).font = { bold: true, color: { argb: "FFFFFFFF" } };
+    sheet.getRow(1).fill = {
+      type: "pattern",
+      pattern: "solid",
+      fgColor: { argb: "FF1F2A5C" },
+    };
+    sheet.columns.forEach((c) => {
+      c.width = 24;
+    });
+    if (sheet.rowCount > 1 && sheet !== dictionary)
+      sheet.autoFilter = {
+        from: "A1",
+        to: { row: sheet.rowCount, column: sheet.columnCount },
+      };
+  }
+  dictionary.getColumn(2).width = 110;
   const data = Buffer.from(await wb.xlsx.writeBuffer());
   const file = `rooms/${room.id}/reports/${Date.now()}-${randomUUID()}.xlsx`;
   await service.store.write(file, data, null);

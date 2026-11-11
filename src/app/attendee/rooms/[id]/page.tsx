@@ -66,7 +66,8 @@ export default function Assessment({
     [dirty, setDirty] = useState(false),
     [confirmSubmit, setConfirmSubmit] = useState(false),
     [lastSaved, setLastSaved] = useState(""),
-    [uploadStatus, setUploadStatus] = useState("");
+    [uploadStatus, setUploadStatus] = useState(""),
+    [retry, setRetry] = useState(0);
   const participantRef = useRef<Participant | null>(null),
     draftRef = useRef(draft),
     version = useRef(0),
@@ -149,8 +150,14 @@ export default function Assessment({
         } catch (e) {
           const message = (e as Error).message;
           if (message.includes("Another tab")) blocked.current = true;
-          setStatus("Save failed · retry needed");
+          const final = blocked.current || /locked|closed/i.test(message);
+          setStatus(
+            final
+              ? "Save failed · retry needed"
+              : "Not yet saved · retrying automatically",
+          );
           setError(message);
+          if (!final && mounted.current) setRetry((n) => n + 1);
           throw e;
         }
       }
@@ -176,6 +183,14 @@ export default function Assessment({
     }, 1200);
     return () => clearTimeout(timer);
   }, [draft, dirty, flush]);
+  useEffect(() => {
+    // A failed save is retried without waiting for the next edit.
+    if (!retry) return;
+    const timer = setTimeout(() => {
+      void flush().catch(() => {});
+    }, 8000);
+    return () => clearTimeout(timer);
+  }, [retry, flush]);
   useEffect(() => {
     const onLeave = (e: BeforeUnloadEvent) => {
       if (version.current !== savedVersion.current) {
@@ -322,9 +337,11 @@ export default function Assessment({
       <div className="page-heading">
         <div>
           <div className="eyebrow">
-            {room.phase === "pre"
-              ? "PRE-AI · ESTABLISH YOUR BASELINE"
-              : "POST-AI · MEASURE YOUR PROGRESS"}
+            {room.mode === "single"
+              ? (room.company || "TECHNOEDGE").toUpperCase() + " · ONE ATTEMPT"
+              : room.phase === "pre"
+                ? "PRE-AI · ESTABLISH YOUR BASELINE"
+                : "POST-AI · MEASURE YOUR PROGRESS"}
           </div>
           <h1>{room.name}</h1>
           <p>
@@ -335,7 +352,9 @@ export default function Assessment({
               : "Complete any 3 challenges"}
           </p>
         </div>
-        <span className="pill lavender">{room.phase.toUpperCase()}-AI</span>
+        {room.mode !== "single" && (
+          <span className="pill lavender">{room.phase.toUpperCase()}-AI</span>
+        )}
       </div>
       <ErrorBox message={error} />
       {!p.submittedAt && (
@@ -481,9 +500,11 @@ export default function Assessment({
                   resume; elapsed time keeps running.
                 </p>
                 <strong>
-                  {room.phase === "pre"
-                    ? "Work without generative AI during the baseline."
-                    : "AI tools are permitted. Describe how you used them in your method notes."}
+                  {room.mode === "single"
+                    ? "Each challenge has a download pack, four questions and one file to upload."
+                    : room.phase === "pre"
+                      ? "Work without generative AI during the baseline."
+                      : "AI tools are permitted. Describe how you used them in your method notes."}
                 </strong>
               </div>
             </section>
@@ -568,8 +589,10 @@ export default function Assessment({
                 <h2>{task.title}</h2>
                 <p className="task-brief">{task.brief}</p>
                 <DownloadLink href={"/api/" + base + "/materials/" + active}>
-                  <Download size={16} /> Download {room.phase.toUpperCase()}-AI
-                  materials
+                  <Download size={16} />{" "}
+                  {room.mode === "single"
+                    ? "Download source materials"
+                    : `Download ${room.phase.toUpperCase()}-AI materials`}
                 </DownloadLink>
                 <div className="deliverables">
                   <h3>What to submit</h3>

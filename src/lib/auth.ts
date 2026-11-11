@@ -162,11 +162,16 @@ export async function verifyCode(id: string, code: string) {
     name: record.name,
     role: await authorizedRole(storage(), record.email),
   };
-  await mutate<Identity>(
-    storage(),
-    `identities/${identity.id}.json`,
-    () => identity,
-  );
+  // Registration record: created once, then only the name and login times change.
+  const now = new Date().toISOString();
+  await mutate<
+    Identity & { createdAt?: string; verifiedAt?: string; lastLoginAt?: string }
+  >(storage(), `identities/${identity.id}.json`, (old) => ({
+    ...identity,
+    createdAt: old?.createdAt || now,
+    verifiedAt: old?.verifiedAt || now,
+    lastLoginAt: now,
+  }));
   await createSession(identity);
   return identity;
 }

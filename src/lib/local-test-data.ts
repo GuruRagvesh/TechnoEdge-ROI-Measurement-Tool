@@ -344,6 +344,7 @@ async function seedCorporate(s: Storage) {
     "Orion Finance",
     "Leadership · November 2026",
     "a70288fe-e974-48c3-a538-63e706be2be9",
+    "paired",
   );
   for (const id of [program.preRoomId, program.postRoomId]) {
     const room = await service.room(id);

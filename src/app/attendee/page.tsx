@@ -31,7 +31,7 @@ type Entry = {
 export default function Attendee() {
   const path = usePathname();
   const program = path.includes("/results/") ? path.split("/")[3] : null;
-  const { identity, error: authError } = useIdentity("attendee"),
+  const { identity, error: authError, single } = useIdentity("attendee"),
     [entries, setEntries] = useState<Entry[]>([]),
     [loaded, setLoaded] = useState(false),
     [error, setError] = useState("");
@@ -98,16 +98,22 @@ export default function Attendee() {
     <Shell identity={identity}>
       <div className="page-heading">
         <div>
-          <div className="eyebrow">YOUR PERSONAL BENCHMARK</div>
+          <div className="eyebrow">
+            {single ? "YOUR ASSESSMENT" : "YOUR PERSONAL BENCHMARK"}
+          </div>
           <h1>
             {path.includes("/results")
               ? "Your results"
               : path.includes("/assessments")
                 ? "My Assessments"
-                : `Welcome back, ${identity.name.split(" ")[0]}`}
+                : `Welcome, ${identity.name.split(" ")[0]}`}
             <span className="wave">.</span>
           </h1>
-          <p>Your assessments, progress and evaluated results in one place.</p>
+          <p>
+            {single
+              ? "Your assessment status and evaluated results."
+              : "Your assessments, progress and evaluated results in one place."}
+          </p>
         </div>
         <span className="pill verified">
           <CheckCircle2 size={14} /> Email verified
@@ -116,11 +122,19 @@ export default function Attendee() {
       {path === "/attendee" && (
         <section className="hero-banner">
           <div>
-            <span className="pill light">BASE CAMP → SUMMIT</span>
-            <h2>Your assessment journey.</h2>
+            <span className="pill light">
+              {single ? "ONE ATTEMPT · 60 MINUTES" : "BASE CAMP → SUMMIT"}
+            </span>
+            <h2>
+              {single
+                ? "AI Productivity Assessment"
+                : "Your assessment journey."}
+            </h2>
             <p>
               Three practical challenges. One hour. Real evidence of how you
               work.
+              {single &&
+                " Once you start, the attempt cannot be paused or restarted."}
             </p>
             {activeAttempt && (
               <Link
@@ -175,20 +189,39 @@ export default function Attendee() {
           value={format(latest?.metrics?.accuracy, "%")}
           detail="Automatically marked results"
         />
-        <Stat
-          label="Observed time reduction"
-          value={format(paired?.comparison?.timeReduction, "%")}
-          detail="Matched & graded Pre/Post pair"
-          icon={<TrendingUp size={17} />}
-        />
+        {single ? (
+          <Stat
+            label="Elapsed time"
+            value={format(latest?.metrics?.minutes, " min")}
+            detail="Confirmed join to submission"
+            icon={<Clock3 size={17} />}
+          />
+        ) : (
+          <Stat
+            label="Observed time reduction"
+            value={format(paired?.comparison?.timeReduction, "%")}
+            detail="Matched & graded Pre/Post pair"
+            icon={<TrendingUp size={17} />}
+          />
+        )}
       </section>
       <div className="section-heading">
         <div>
-          <h2>Your assessments</h2>
-          <p>Pick up where you left off, or start a new benchmark.</p>
+          <h2>{single ? "Your assessment" : "Your assessments"}</h2>
+          <p>
+            {single
+              ? "Enter the room code from your coordinator to begin. One attempt per room."
+              : "Pick up where you left off, or start a new benchmark."}
+          </p>
         </div>
       </div>
       <ErrorBox message={error} />
+      {single && loaded && entries.length === 0 && (
+        <Empty
+          title="No assessment started yet"
+          detail="Select Start Assessment and enter the room code from your coordinator."
+        />
+      )}
       <div className="room-grid">
         {entries
           .filter((x) =>
@@ -207,20 +240,32 @@ export default function Attendee() {
                     "pill " + (room.phase === "post" ? "mint" : "lavender")
                   }
                 >
-                  {room.phase === "pre" ? "PRE-AI" : "POST-AI"} BENCHMARK
+                  {room.mode === "single"
+                    ? "ASSESSMENT"
+                    : (room.phase === "pre" ? "PRE-AI" : "POST-AI") +
+                      " BENCHMARK"}
                 </span>
                 <span className="subtle">{room.durationMinutes} min</span>
               </div>
               <h3>{room.company || room.name}</h3>
               <p>
-                <strong>{room.phase === "pre" ? "Base Camp" : "Summit"}</strong>{" "}
+                <strong>
+                  {room.mode === "single"
+                    ? room.batch
+                    : room.phase === "pre"
+                      ? "Base Camp"
+                      : "Summit"}
+                </strong>{" "}
                 · {room.closed ? "Closed" : "Open"}
               </p>
               <p>
-                {room.batch} ·{" "}
-                {room.phase === "pre"
-                  ? "Establish your baseline"
-                  : "Measure what changed"}
+                {room.mode === "single"
+                  ? "Three of five practical challenges · one attempt"
+                  : room.batch +
+                    " · " +
+                    (room.phase === "pre"
+                      ? "Establish your baseline"
+                      : "Measure what changed")}
               </p>
               <div className="task-progress">
                 <span>
@@ -339,8 +384,10 @@ export default function Attendee() {
         <div>
           <strong>Good work is more than fast work.</strong>
           <p>
-            Your benchmark considers accuracy, practical quality and
-            completeness alongside elapsed time.
+            Your result considers accuracy, practical quality and completeness
+            alongside elapsed time.
+            {single &&
+              " Final marks appear here after a TechnoEdge evaluator has reviewed your uploaded files."}
           </p>
         </div>
       </div>

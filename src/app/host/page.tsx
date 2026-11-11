@@ -29,7 +29,9 @@ type RoomData = {
   tasks: ReturnType<typeof publicTasks>;
 };
 const roomLabel = (r: Room) =>
-  `${r.company || r.name} · ${r.batch} · ${r.phase === "pre" ? "Base Camp" : "Summit"}`;
+  r.mode === "single"
+    ? `${r.company || r.name} · ${r.batch}`
+    : `${r.company || r.name} · ${r.batch} · ${r.phase === "pre" ? "Base Camp" : "Summit"}`;
 const state = (p: Participant) =>
   p.submittedAt
     ? p.submissionReason === "deadline"
@@ -39,7 +41,7 @@ const state = (p: Participant) =>
         : "Awaiting evaluation"
     : "In progress";
 export default function Host() {
-  const { identity, error: authError } = useIdentity("host");
+  const { identity, error: authError, single } = useIdentity("host");
   const path = usePathname();
   const [rooms, setRooms] = useState<Room[]>([]),
     [records, setRecords] = useState<Record<string, RoomData>>({}),
@@ -131,7 +133,7 @@ export default function Host() {
   );
   const room = routeRoom
     ? rooms.find((r) => r.id === routeRoom)
-    : path === "/host/reports/export"
+    : path.startsWith("/host/reports")
       ? filtered.find((r) => r.id === selected) || filtered[0]
       : rooms.find((r) => r.id === selected) || programRooms[0] || rooms[0];
   const data = room ? records[room.id] : null;
@@ -141,7 +143,8 @@ export default function Host() {
     isList = path === "/host/assessments",
     isDetail = programRooms.length > 0 && parts[1] === "assessments",
     isReports = parts[1] === "reports",
-    isExport = path === "/host/reports/export",
+    // Single-round release has no comparison or modeled-ROI report; reports open the export.
+    isExport = path === "/host/reports/export" || (single && isReports),
     isMonitor = parts[1] === "rooms",
     isGrade = parts[3] === "evaluate";
   useEffect(() => {
@@ -277,11 +280,15 @@ export default function Host() {
       model.adoption) /
     100;
   const title = isNew
-    ? "Create a company assessment"
+    ? single
+      ? "Create an assessment room"
+      : "Create a company assessment"
     : isDashboard
       ? "Assessment overview"
       : isList
-        ? "Assessments"
+        ? single
+          ? "Assessment rooms"
+          : "Assessments"
         : isDetail
           ? `${programRooms[0].company || programRooms[0].name} · ${programRooms[0].batch}`
           : isExport
@@ -299,15 +306,19 @@ export default function Host() {
           <h1>{title}</h1>
           <p>
             {isNew
-              ? "Enter the client company and cohort. Fixed challenges and two linked rooms are included."
+              ? single
+                ? "Enter the client company and cohort. One 60-minute room with the five fixed challenges is created."
+                : "Enter the client company and cohort. Fixed challenges and two linked rooms are included."
               : isDashboard
                 ? "Manage corporate cohorts, assessment progress and practical evaluations."
-                : "Company assessments · Base Camp and Summit"}
+                : single
+                  ? "One 60-minute assessment room per company cohort"
+                  : "Company assessments · Base Camp and Summit"}
           </p>
         </div>
         {(isDashboard || isList) && (
           <Link className="button primary" href="/host/assessments/new">
-            + Create assessment
+            {single ? "+ Create room" : "+ Create assessment"}
           </Link>
         )}
       </div>
@@ -347,19 +358,35 @@ export default function Host() {
                 Cancel
               </Link>
               <button className="button primary" disabled={busy || !requestId}>
-                {busy ? "Creating…" : "Create program & two rooms"}
+                {busy
+                  ? "Creating…"
+                  : single
+                    ? "Create assessment room"
+                    : "Create program & two rooms"}
               </button>
             </div>
           </form>
           <section className="panel">
             <h2>Automatically included</h2>
             <ul>
-              <li>Base Camp — open initially</li>
-              <li>Summit — closed until you open it</li>
-              <li>60 minutes per round</li>
+              {single ? (
+                <li>One room, open immediately, with its own room code</li>
+              ) : (
+                <>
+                  <li>Base Camp — open initially</li>
+                  <li>Summit — closed until you open it</li>
+                </>
+              )}
+              <li>
+                {single
+                  ? "60 minutes, one attempt per participant"
+                  : "60 minutes per round"}
+              </li>
               <li>Five validated practical challenges; three required</li>
               <li>60 marks: 36 MCQ + 24 practical</li>
-              <li>Matched categories across different Pre/Post datasets</li>
+              {!single && (
+                <li>Matched categories across different Pre/Post datasets</li>
+              )}
               <li>
                 Room codes, evaluations, Excel reports and evidence exports
               </li>
@@ -389,7 +416,11 @@ export default function Host() {
             <Stat
               label="Submitted attempts"
               value={submitted.length}
-              detail="Pre and Post combined, including expiry"
+              detail={
+                single
+                  ? "Submitted or expired at the deadline"
+                  : "Pre and Post combined, including expiry"
+              }
             />
             <Stat
               label="Awaiting evaluation"
@@ -421,20 +452,69 @@ export default function Host() {
               })
             )}
           </section>
-          <section className="panel">
-            <h2>Pre/Post completion overview</h2>
-            <p>
-              {eligible.length} finalized, complete, matched pairs from{" "}
-              {Object.values(pairs).flat().length} linked participant pairs.
-            </p>
-            <p>
-              Reports exclude unfinished or ungraded pairs and pairs with
-              different scoring versions.
-            </p>
-            <Link className="button secondary" href="/host/reports">
-              See comparison report
-            </Link>
-          </section>
+          {single && (
+            <section className="panel">
+              <h2>Your rooms</h2>
+              {programs.length === 0 && (
+                <p>No rooms yet. Create a room to get a room code.</p>
+              )}
+              {programs.map((r) => {
+                const ps = records[r.id]?.participants || [];
+                return (
+                  <div className="corporate-row" key={r.id}>
+                    <div>
+                      <strong>{roomLabel(r)}</strong>
+                      <p>
+                        {r.closed ? "Closed" : "Open"} · {ps.length} joined ·{" "}
+                        {ps.filter((p) => !p.submittedAt).length} active ·{" "}
+                        {
+                          ps.filter(
+                            (p) =>
+                              p.submittedAt &&
+                              p.submissionReason !== "deadline",
+                          ).length
+                        }{" "}
+                        submitted ·{" "}
+                        {
+                          ps.filter((p) => p.submissionReason === "deadline")
+                            .length
+                        }{" "}
+                        expired ·{" "}
+                        {
+                          ps.filter(
+                            (p) => p.submittedAt && !metrics(p).fullyGraded,
+                          ).length
+                        }{" "}
+                        to evaluate
+                      </p>
+                    </div>
+                    <Link
+                      className="button secondary"
+                      href={"/host/assessments/" + (r.programId || r.id)}
+                    >
+                      Manage room
+                    </Link>
+                  </div>
+                );
+              })}
+            </section>
+          )}
+          {!single && (
+            <section className="panel">
+              <h2>Pre/Post completion overview</h2>
+              <p>
+                {eligible.length} finalized, complete, matched pairs from{" "}
+                {Object.values(pairs).flat().length} linked participant pairs.
+              </p>
+              <p>
+                Reports exclude unfinished or ungraded pairs and pairs with
+                different scoring versions.
+              </p>
+              <Link className="button secondary" href="/host/reports">
+                See comparison report
+              </Link>
+            </section>
+          )}
         </>
       )}
       {isList && (
@@ -451,9 +531,11 @@ export default function Host() {
                 <h2>{r.company || r.name}</h2>
                 <p>{r.batch}</p>
                 <p>
-                  {r.programId
-                    ? "Base Camp + Summit"
-                    : "Historical standalone room"}
+                  {r.mode === "single"
+                    ? "Single 60-minute assessment"
+                    : r.programId
+                      ? "Base Camp + Summit"
+                      : "Historical standalone room"}
                 </p>
                 <Link
                   className="button secondary"
@@ -475,9 +557,11 @@ export default function Host() {
                   {r.closed ? "Closed" : "Open"}
                 </span>
                 <h2>
-                  {r.phase === "pre"
-                    ? "Base Camp — Before AI"
-                    : "Summit — After AI"}
+                  {r.mode === "single"
+                    ? "AI Productivity Assessment"
+                    : r.phase === "pre"
+                      ? "Base Camp — Before AI"
+                      : "Summit — After AI"}
                 </h2>
                 <p>
                   {r.durationMinutes} minutes ·{" "}
@@ -528,9 +612,11 @@ export default function Host() {
           <section className="panel">
             <h2>Reports and evidence</h2>
             <div className="button-row">
-              <Link className="button secondary" href="/host/reports">
-                View results & impact
-              </Link>
+              {!single && (
+                <Link className="button secondary" href="/host/reports">
+                  View results & impact
+                </Link>
+              )}
               <Link className="button secondary" href="/host/reports/export">
                 Excel & evidence exports
               </Link>
@@ -791,7 +877,7 @@ export default function Host() {
           </label>
           {isExport ? (
             <section className="panel">
-              <h2>Export a round</h2>
+              <h2>{single ? "Export a room" : "Export a round"}</h2>
               <label>
                 Assessment round
                 <select
@@ -807,9 +893,9 @@ export default function Host() {
                 </select>
               </label>
               <p>
-                Excel includes identity, answers, scoring version and maximum,
-                practical marks, timestamps, evidence index and eligible
-                Pre/Post comparisons. Reports are archived as snapshots.
+                {single
+                  ? "The Excel workbook has six sheets: Participants, Question Answers, Challenge Results, Overall Results, Evidence Log and Data Dictionary. Totals show Pending until every practical evaluation is recorded."
+                  : "Excel includes identity, answers, scoring version and maximum, practical marks, timestamps, evidence index and eligible Pre/Post comparisons. Reports are archived as snapshots."}
               </p>
               {room && (
                 <div className="button-row">

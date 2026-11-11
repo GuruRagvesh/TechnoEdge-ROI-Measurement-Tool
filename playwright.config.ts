@@ -25,6 +25,7 @@ export default defineConfig({
       STORAGE_ADAPTER: "local",
       LOCAL_STORAGE_PATH: ".test-work/e2e",
       MOCK_AUTH: "true",
+      ASSESSMENT_MODE: "paired",
       LOCAL_TEST_ACCOUNTS: "true",
       TEST_ATTENDEE_PASSWORD: passwords.attendee,
       TEST_HOST_PASSWORD: passwords.host,

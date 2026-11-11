@@ -12,7 +12,7 @@ import {
 } from "./types";
 import { createJson, getJson, mutate, type Storage } from "./storage";
 import { mark } from "./challenges";
-import { evidenceLimitMB } from "./config";
+import { assessmentMode, evidenceLimitMB } from "./config";
 import { metrics } from "./metrics";
 export const roomKey = (id: string) => `rooms/${id}/room.json`;
 export const participantKey = (room: string, id: string) =>
@@ -99,6 +99,8 @@ export class AssessmentService {
     company: string,
     cohort: string,
     requestId: string,
+    // Local synthetic fixtures are paired by design and pass "paired" explicitly.
+    mode: "single" | "paired" = assessmentMode(),
   ) {
     if (host.role !== "host") throw new AppError(403, "Host access required.");
     // Stable per-host request ID makes retries recover the same pair, including after partial writes.
@@ -113,21 +115,29 @@ export class AssessmentService {
       cohort,
       ownerId: host.id,
       preRoomId: id + "-pre",
-      postRoomId: id + "-post",
+      postRoomId: mode === "single" ? "" : id + "-post",
       createdAt: iso(),
       ready: false,
+      ...(mode === "single" ? { mode: "single" as const } : {}),
     });
+    // A retried request keeps the shape it was first created with.
+    const single = program.mode === "single";
     if (program.company !== company || program.cohort !== cohort)
       throw new AppError(
         409,
         "This creation request was already used for another cohort.",
       );
-    for (const phase of ["pre", "post"] as const) {
+    for (const phase of single
+      ? (["pre"] as const)
+      : (["pre", "post"] as const)) {
       const room: Room = {
         id: phase === "pre" ? program.preRoomId : program.postRoomId,
         programId: id,
         company,
-        name: "AI Productivity Benchmark",
+        ...(single ? { mode: "single" as const } : {}),
+        name: single
+          ? "AI Productivity Assessment"
+          : "AI Productivity Benchmark",
         phase,
         durationMinutes: 60,
         ownerId: host.id,
@@ -166,6 +176,13 @@ export class AssessmentService {
         );
     }
     const prior = await this.participant(roomId, identity.id);
+    // Single-round release: only host-created cohort rooms accept new attendees.
+    if (assessmentMode() === "single" && !room.programId && !prior)
+      throw new AppError(
+        404,
+        "Invalid room code. Check the code with your coordinator.",
+        "INVALID_ROOM",
+      );
     if (prior?.submittedAt)
       throw new AppError(
         409,
@@ -210,7 +227,12 @@ export class AssessmentService {
       this.store,
       `${identity.role === "host" ? "hosts" : "attendees"}/${identity.id}/rooms.json`,
     );
-    const ids = [...new Set(["ai-productivity-pre", ...(index?.rooms || [])])];
+    const ids = [
+      ...new Set([
+        ...(assessmentMode() === "single" ? [] : ["ai-productivity-pre"]),
+        ...(index?.rooms || []),
+      ]),
+    ];
     const result = [];
     for (const id of ids) result.push(await this.room(id));
     if (identity.role === "attendee") {
@@ -220,7 +242,11 @@ export class AssessmentService {
           this.store,
           `programs/${pre.programId}/program.json`,
         );
-        if (program?.ready && !result.some((r) => r.id === program.postRoomId))
+        if (
+          program?.ready &&
+          program.postRoomId &&
+          !result.some((r) => r.id === program.postRoomId)
+        )
           result.push(await this.room(program.postRoomId));
       }
     }
@@ -271,15 +297,46 @@ export class AssessmentService {
     return this.expire(roomId, id);
   }
   private finalize(room: Room, p: Participant, reason: "manual" | "deadline") {
+    const submittedAt =
+      reason === "deadline"
+        ? p.deadline!
+        : new Date(this.clock()).toISOString();
+    // No-evidence policy (single round): a selected challenge with no uploaded
+    // evidence scores 0/8 practical, recorded explicitly rather than left pending.
+    const absent =
+      room.mode === "single"
+        ? p.selected.filter(
+            (t) => !p.grades[t] && !p.evidence.some((e) => e.task === t),
+          )
+        : [];
+    const zero = (): Grade => ({
+      quality: 0,
+      accuracy: 0,
+      completeness: 0,
+      feedback:
+        "No evidence was submitted for this challenge. Practical marks: 0.",
+      graderId: "system",
+      at: submittedAt,
+      automatic: true,
+    });
     return {
       ...p,
       mcq: mark(room.phase, p.answers, p.selected),
-      submittedAt:
-        reason === "deadline"
-          ? p.deadline!
-          : new Date(this.clock()).toISOString(),
+      submittedAt,
       submissionReason: reason,
       revision: p.revision + 1,
+      ...(absent.length
+        ? {
+            grades: {
+              ...p.grades,
+              ...Object.fromEntries(absent.map((t) => [t, zero()])),
+            },
+            gradingHistory: [
+              ...(p.gradingHistory || []),
+              ...absent.map((task) => ({ task, ...zero() })),
+            ],
+          }
+        : {}),
     };
   }
   async expire(roomId: string, id: string): Promise<Participant | null> {
@@ -397,9 +454,20 @@ export class AssessmentService {
         complete[task] =
           p.taskCompletedAt[task] || new Date(this.clock()).toISOString();
       }
+      const now = new Date(this.clock()).toISOString();
+      const answerSavedAt: NonNullable<Participant["answerSavedAt"]> = {};
+      for (const task of Object.keys(input.answers) as TaskId[])
+        answerSavedAt[task] = (input.answers[task] || []).map((a, i) =>
+          a < 0
+            ? null
+            : p.answers[task]?.[i] === a
+              ? (p.answerSavedAt?.[task]?.[i] ?? now)
+              : now,
+        );
       return {
         ...p,
         answers: input.answers,
+        answerSavedAt,
         notes: input.notes,
         taskCompletedAt: complete,
       };

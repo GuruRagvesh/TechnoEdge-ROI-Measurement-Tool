@@ -93,10 +93,12 @@ export default function Join() {
           <div className="join-confirm">
             <h2>{room.company || room.name}</h2>
             <p>
-              {room.batch} ·{" "}
-              {room.phase === "pre"
-                ? "Base Camp — Before AI"
-                : "Summit — After AI"}
+              {room.batch}
+              {room.mode !== "single" &&
+                " · " +
+                  (room.phase === "pre"
+                    ? "Base Camp — Before AI"
+                    : "Summit — After AI")}
             </p>
             <ul>
               <li>
@@ -108,14 +110,17 @@ export default function Join() {
                   ? "Choose exactly three of five practical challenges. Selection time is included."
                   : "Your three Base Camp categories are reused with different datasets."}
               </li>
+              {room.mode !== "single" && (
+                <li>
+                  {room.phase === "pre"
+                    ? "Do not use generative AI for this baseline."
+                    : "AI tools are permitted. Document your method."}
+                </li>
+              )}
               <li>
-                {room.phase === "pre"
-                  ? "Do not use generative AI for this baseline."
-                  : "AI tools are permitted. Document your method."}
-              </li>
-              <li>
-                Submission or expiry locks the attempt. You can resume an
-                existing active attempt with its original deadline.
+                {room.mode === "single"
+                  ? "One attempt only. Submission or expiry locks it and it cannot be restarted. If you are disconnected, sign in again to resume with the original deadline."
+                  : "Submission or expiry locks the attempt. You can resume an existing active attempt with its original deadline."}
               </li>
               <li>
                 {room.scoringVersion === "corporate-60-v1"

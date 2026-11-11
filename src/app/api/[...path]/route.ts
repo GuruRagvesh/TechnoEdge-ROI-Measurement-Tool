@@ -19,7 +19,12 @@ import {
   verifyCode,
 } from "@/lib/auth";
 import { evidenceLimitMB } from "@/lib/config";
-import { appUrl, mockAuth, localTestRequestAllowed } from "@/lib/config";
+import {
+  appUrl,
+  assessmentMode,
+  mockAuth,
+  localTestRequestAllowed,
+} from "@/lib/config";
 import { LocalTestStorage } from "@/lib/local-test-storage";
 import { authenticateLocalTest } from "@/lib/local-test-auth";
 import { publicTasks } from "@/lib/challenges";
@@ -112,6 +117,7 @@ async function route(req: NextRequest) {
     if (roomId === "me")
       return json({
         identity: current,
+        assessmentMode: assessmentMode(),
         localAccountsAvailable: localTestRequestAllowed(
           new URL(req.url),
           req.headers.get("host"),
@@ -357,8 +363,13 @@ async function route(req: NextRequest) {
         "Start your selected task before downloading materials.",
       );
     return download(
-      await materials(t, room.phase, room.scoringVersion || "legacy-100"),
-      `${t}-${room.phase}.zip`,
+      await materials(
+        t,
+        room.phase,
+        room.scoringVersion || "legacy-100",
+        room.mode === "single",
+      ),
+      room.mode === "single" ? `${t}-materials.zip` : `${t}-${room.phase}.zip`,
       "application/zip",
     );
   }
@@ -464,7 +475,10 @@ async function route(req: NextRequest) {
             snapshot,
           );
     const name =
-      roomId + (action === "export" ? "-assessment.xlsx" : "-evidence.zip");
+      (room.mode === "single"
+        ? (room.company + "-" + room.batch).replace(/[^A-Za-z0-9_-]+/g, "_")
+        : roomId) +
+      (action === "export" ? "-assessment.xlsx" : "-evidence.zip");
     if (s instanceof GraphStorage)
       return json({ downloadUrl: await s.downloadLink(artifact), name });
     return download(
