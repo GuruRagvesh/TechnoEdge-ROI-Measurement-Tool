@@ -31,8 +31,12 @@ export type Program = {
   // "single" = one assessment round; postRoomId is empty. Absent = paired Base Camp/Summit.
   mode?: "single";
 };
+// How MCQ options are ordered. Rooms created before balanced-v2 have no value
+// and keep the original sequential order, so their saved answers stay valid.
+export type OptionLayout = "sequential-v1" | "balanced-v2";
 export type Room = {
   mode?: "single";
+  optionLayout?: OptionLayout;
   programId?: string;
   company?: string;
   scoringVersion?: ScoringVersion;

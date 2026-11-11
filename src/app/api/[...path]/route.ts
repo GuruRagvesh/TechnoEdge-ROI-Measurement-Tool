@@ -27,7 +27,7 @@ import {
 } from "@/lib/config";
 import { LocalTestStorage } from "@/lib/local-test-storage";
 import { authenticateLocalTest } from "@/lib/local-test-auth";
-import { publicTasks } from "@/lib/challenges";
+import { layoutOf, publicTasks } from "@/lib/challenges";
 import { keyWorkbook, materials } from "@/lib/materials";
 import { evidenceZip, excelReport } from "@/lib/reports";
 import { GraphStorage, getJson, storage } from "@/lib/storage";
@@ -238,7 +238,7 @@ async function route(req: NextRequest) {
     return json({
       room,
       participant,
-      tasks: publicTasks(room.phase),
+      tasks: publicTasks(room.phase, layoutOf(room)),
       preSelected,
       evidenceLimitMB: evidenceLimitMB(),
       uploadTransport:
@@ -397,7 +397,7 @@ async function route(req: NextRequest) {
     return json({
       room,
       participants: await service.attendees(roomId, identity),
-      tasks: publicTasks(room.phase),
+      tasks: publicTasks(room.phase, layoutOf(room)),
     });
   if (action === "grade" && method === "POST") {
     const input = z
@@ -491,7 +491,7 @@ async function route(req: NextRequest) {
   }
   if (action === "answer-key" && method === "GET")
     return download(
-      await keyWorkbook(room.phase),
+      await keyWorkbook(room.phase, layoutOf(room)),
       `${roomId}-answer-key.xlsx`,
       "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
     );

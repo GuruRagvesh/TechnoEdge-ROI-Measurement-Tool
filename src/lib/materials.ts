@@ -2,7 +2,7 @@ import ExcelJS from "exceljs";
 import JSZip from "jszip";
 import { Document, Packer, Paragraph, HeadingLevel } from "docx";
 import { answerKey, catalogue, dataset, regions } from "./challenges";
-import type { Phase, TaskId, ScoringVersion } from "./types";
+import type { OptionLayout, Phase, TaskId, ScoringVersion } from "./types";
 const csv = (rows: Record<string, unknown>[]) =>
   [
     Object.keys(rows[0]).join(","),
@@ -112,7 +112,7 @@ export async function materials(
   }
   return zip.generateAsync({ type: "nodebuffer", compression: "DEFLATE" });
 }
-export async function keyWorkbook(phase: Phase) {
+export async function keyWorkbook(phase: Phase, layout?: OptionLayout) {
   const wb = new ExcelJS.Workbook();
   const sh = wb.addWorksheet("Verified answer key");
   sh.addRow([
@@ -122,7 +122,7 @@ export async function keyWorkbook(phase: Phase) {
     "Answer",
     "Derivation",
   ]);
-  for (const [id, questions] of Object.entries(answerKey(phase)))
+  for (const [id, questions] of Object.entries(answerKey(phase, layout)))
     questions.forEach((q, i) =>
       sh.addRow([
         catalogue[id as TaskId].title,

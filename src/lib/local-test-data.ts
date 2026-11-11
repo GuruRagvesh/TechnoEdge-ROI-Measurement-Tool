@@ -2,7 +2,7 @@ import { createHash } from "node:crypto";
 import ExcelJS from "exceljs";
 import { Document, Packer, Paragraph } from "docx";
 import { AssessmentService, roomKey, participantKey } from "./assessment";
-import { answerKey, mark } from "./challenges";
+import { answerKey, CURRENT_OPTION_LAYOUT, layoutOf, mark } from "./challenges";
 import { createJson, getJson, mutate, type Storage } from "./storage";
 import { assertLocalTestEnabled, LocalTestStorage } from "./local-test-storage";
 import { excelReport } from "./reports";
@@ -80,6 +80,7 @@ const roomDefinitions: Room[] = [
   {
     id: "summit-next",
     scoringVersion: "corporate-60-v1",
+    optionLayout: CURRENT_OPTION_LAYOUT,
     name: "AI Productivity Benchmark",
     phase: "post",
     preRoomId: "ai-productivity-pre",
@@ -147,7 +148,7 @@ async function fixture(
       : Object.fromEntries(
           selected.map((t) => [
             t,
-            answerKey(room.phase)[t].map((q, i) =>
+            answerKey(room.phase, layoutOf(room))[t].map((q, i) =>
               room.phase === "pre" && i === 3 ? (q.correct + 1) % 4 : q.correct,
             ),
           ]),
@@ -228,7 +229,7 @@ async function fixture(
     submittedAt: submitted,
     submissionReason: finished ? "manual" : undefined,
     revision: complete ? 8 : 2,
-    mcq: finished ? mark(room.phase, answers, selected) : {},
+    mcq: finished ? mark(room.phase, answers, selected, layoutOf(room)) : {},
     grades,
     taskCompletedAt: complete
       ? Object.fromEntries(

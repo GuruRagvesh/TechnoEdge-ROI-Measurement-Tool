@@ -2,7 +2,7 @@ import ExcelJS from "exceljs";
 import JSZip from "jszip";
 import { createHash, randomUUID } from "node:crypto";
 import { AssessmentService, comparison, metrics } from "./assessment";
-import { answerKey, catalogue } from "./challenges";
+import { answerKey, catalogue, layoutOf } from "./challenges";
 import {
   AppError,
   type Identity,
@@ -149,7 +149,7 @@ export async function excelReport(
     "Accuracy delta points",
     "Quality delta points",
   ]);
-  const key = answerKey(room.phase);
+  const key = answerKey(room.phase, layoutOf(room));
   for (const p of participants) {
     const m = metrics(p);
     people.addRow([
@@ -395,7 +395,7 @@ async function singleRoundReport(
     "Protected storage reference",
     "Confirmed (UTC)",
   ]);
-  const key = answerKey(room.phase);
+  const key = answerKey(room.phase, layoutOf(room));
   for (const p of participants) {
     const m = metrics(p),
       status = STATUS(p, m.fullyGraded),
@@ -463,7 +463,7 @@ async function singleRoundReport(
           a === q.correct ? 3 : 0,
           3,
           p.answerSavedAt?.[id]?.[i] ?? p.lastSeenAt,
-          ANSWER_KEY_VERSION,
+          `${ANSWER_KEY_VERSION} · options ${layoutOf(room)}`,
         ]);
       });
     }
@@ -529,6 +529,12 @@ async function singleRoundReport(
     ["Scoring version", room.scoringVersion || "legacy-100"],
     ["Material version", MATERIAL_VERSION],
     ["Answer key version", ANSWER_KEY_VERSION],
+    [
+      "Option layout",
+      layoutOf(room) === "balanced-v2"
+        ? "balanced-v2: options in ascending order; the correct value's position varies by question."
+        : "sequential-v1: original option order (room created before balanced-v2).",
+    ],
     [
       "Scoring",
       "Three challenges x (4 MCQs x 3 marks = 12, plus practical evidence out of 8) = 60 marks.",
