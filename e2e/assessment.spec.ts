@@ -318,6 +318,10 @@ test("corporate journey: host OTP, paired creation, confirmed join, reload/outag
     page.getByRole("heading", { name: "Progress you can see." }),
   ).toBeVisible();
   await expect(page.locator(".comparison-charts figure")).toHaveCount(4);
+  // The scorecard's Pre/Post area shows the genuine matched marks.
+  await expect(page.locator(".sc-pp-figures dd").nth(0)).toContainText("/ 60");
+  await expect(page.locator(".sc-pp-figures dd").nth(1)).toContainText("/ 60");
+  await expect(page.locator(".sc-pp-figures")).not.toContainText("Not available");
   await hp.goto(`/host/rooms/${program.postRoomId}/monitor`);
   await expect(
     hp.getByRole("cell",{name:"Finalized",exact:true}),

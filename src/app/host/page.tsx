@@ -14,6 +14,7 @@ import {
   useIdentity,
 } from "@/components/ui";
 import { PrePostCharts } from "@/components/pre-post-charts";
+import { HostDashboard } from "@/components/host-dashboard";
 import { metrics } from "@/lib/metrics";
 import type { comparison } from "@/lib/assessment";
 import type { Participant, Program, Room, TaskId } from "@/lib/types";
@@ -394,64 +395,80 @@ export default function Host() {
           </section>
         </div>
       )}
+      {isDashboard && single && (
+        <HostDashboard
+          data={rooms.filter((r) => records[r.id]).map((r) => records[r.id])}
+          loaded={!!updated}
+          error={error}
+          updated={updated}
+          onRefresh={() => void load()}
+        />
+      )}
       {isDashboard && (
         <>
-          <section className="stats-grid">
-            <Stat
-              label="Client cohorts"
-              value={
-                rooms.filter((r, i, a) =>
-                  r.programId
-                    ? a.findIndex((x) => x.programId === r.programId) === i
-                    : true,
-                ).length
-              }
-              detail="Includes historical standalone rooms"
-            />
-            <Stat
-              label="Participants"
-              value={new Set(all.map((p) => p.identity.id)).size}
-              detail="Unique identities across your rooms"
-            />
-            <Stat
-              label="Submitted attempts"
-              value={submitted.length}
-              detail={
-                single
-                  ? "Submitted or expired at the deadline"
-                  : "Pre and Post combined, including expiry"
-              }
-            />
-            <Stat
-              label="Awaiting evaluation"
-              value={pending.length}
-              detail="Submitted attempts requiring practical marks"
-            />
-          </section>
-          <section className="panel">
-            <h2>Programs requiring attention</h2>
-            {pending.length === 0 ? (
-              <p>No practical evaluations are pending.</p>
-            ) : (
-              pending.map((p) => {
-                const r = rooms.find((r) => r.id === p.roomId)!;
-                return (
-                  <div className="corporate-row" key={p.roomId + p.identity.id}>
-                    <div>
-                      <strong>{p.identity.name}</strong>
-                      <p>{roomLabel(r)}</p>
-                    </div>
-                    <Link
-                      className="button secondary"
-                      href={`/host/rooms/${r.id}/evaluate/${p.identity.id}`}
-                    >
-                      Evaluate
-                    </Link>
-                  </div>
-                );
-              })
-            )}
-          </section>
+          {!single && (
+            <>
+              <section className="stats-grid">
+                <Stat
+                  label="Client cohorts"
+                  value={
+                    rooms.filter((r, i, a) =>
+                      r.programId
+                        ? a.findIndex((x) => x.programId === r.programId) === i
+                        : true,
+                    ).length
+                  }
+                  detail="Includes historical standalone rooms"
+                />
+                <Stat
+                  label="Participants"
+                  value={new Set(all.map((p) => p.identity.id)).size}
+                  detail="Unique identities across your rooms"
+                />
+                <Stat
+                  label="Submitted attempts"
+                  value={submitted.length}
+                  detail={
+                    single
+                      ? "Submitted or expired at the deadline"
+                      : "Pre and Post combined, including expiry"
+                  }
+                />
+                <Stat
+                  label="Awaiting evaluation"
+                  value={pending.length}
+                  detail="Submitted attempts requiring practical marks"
+                />
+              </section>
+              <section className="panel">
+                <h2>Programs requiring attention</h2>
+                {pending.length === 0 ? (
+                  <p>No practical evaluations are pending.</p>
+                ) : (
+                  pending.map((p) => {
+                    const r = rooms.find((r) => r.id === p.roomId)!;
+                    return (
+                      <div
+                        className="corporate-row"
+                        key={p.roomId + p.identity.id}
+                      >
+                        <div>
+                          <strong>{p.identity.name}</strong>
+                          <p>{roomLabel(r)}</p>
+                        </div>
+                        <Link
+                          className="button secondary"
+                          href={`/host/rooms/${r.id}/evaluate/${p.identity.id}`}
+                        >
+                          Evaluate
+                        </Link>
+                      </div>
+                    );
+                  })
+                )}
+              </section>
+            </>
+          )}
           {single && (
             <section className="panel">
               <h2>Your rooms</h2>
