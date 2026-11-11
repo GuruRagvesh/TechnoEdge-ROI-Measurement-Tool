@@ -416,7 +416,8 @@ export class GraphStorage implements Storage {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          item: { name, "@microsoft.graph.conflictBehavior": "fail" },
+          // Annotation first, as in write(), which Graph accepts.
+          item: { "@microsoft.graph.conflictBehavior": "fail", name },
         }),
       },
     );
