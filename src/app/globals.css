@@ -2284,3 +2284,29 @@ tr:last-child td {
     transition: none !important;
   }
 }
+
+/* Final submission checklist */
+.review-list {
+  list-style: none;
+  padding: 0;
+  margin: 12px 0;
+  display: grid;
+  gap: 10px;
+  text-align: left;
+}
+.review-list li {
+  display: grid;
+  gap: 3px;
+  padding: 10px 14px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  font-size: 13px;
+}
+.review-list li span {
+  color: var(--muted);
+  overflow-wrap: anywhere;
+}
+.submission-review .panel {
+  max-height: calc(100vh - 40px);
+  overflow-y: auto;
+}

@@ -15,21 +15,47 @@ export async function directEvidenceUpload(
   fetcher: typeof fetch = fetch,
   sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms)),
 ): Promise<Participant> {
+  // upload-start, upload-status and upload-complete are idempotent on the
+  // server (same file → same intent; completion twice → same receipt), so a
+  // gateway page, timeout or dropped connection is retried a few times. A
+  // refusal from the app itself (4xx with a JSON error) is shown at once.
   const request = async <T>(action: string, data: unknown): Promise<T> => {
-    const r = await fetcher(base + "/" + action, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(data),
-      credentials: "same-origin",
-      cache: "no-store",
-    });
-    const result = await r.json();
-    if (!r.ok)
-      throw new Error(
-        result.error ||
-          "Upload could not be saved. Select the same file to resume.",
-      );
-    return result;
+    let last = "";
+    for (let attempt = 0; attempt < 4; attempt++) {
+      if (attempt) await sleep(1000 * 2 ** (attempt - 1));
+      let r: Response;
+      try {
+        r = await fetcher(base + "/" + action, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(data),
+          credentials: "same-origin",
+          cache: "no-store",
+        });
+      } catch {
+        last = "the connection was interrupted";
+        continue;
+      }
+      const text = await r.text().catch(() => "");
+      let result: (T & { error?: string }) | null = null;
+      try {
+        result = text ? JSON.parse(text) : null;
+      } catch {
+        result = null;
+      }
+      if (r.ok && result) return result;
+      const transient =
+        !result || r.status === 408 || r.status === 429 || r.status >= 500;
+      if (!transient)
+        throw new Error(
+          result?.error ||
+            "Upload could not be saved. Select the same file to resume.",
+        );
+      last = result?.error || `the server returned HTTP ${r.status}`;
+    }
+    throw new Error(
+      `Upload could not be confirmed (${last}). Select the same file to resume — anything already sent to SharePoint is kept.`,
+    );
   };
   progress("Checking file and preparing secure upload…");
   const digest = await crypto.subtle.digest(
