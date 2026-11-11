@@ -423,15 +423,20 @@ export class GraphStorage implements Storage {
     if (!r.ok) {
       // Report Microsoft's status and error code (never a URL or token) so
       // operators can act; e.g. 403 accessDenied vs 400 invalidRequest.
-      const code = await r
+      const detail = await r
         .json()
         .then((b) =>
-          String(b?.error?.code || "").replace(/[^A-Za-z0-9_.-]/g, ""),
+          [b?.error?.code, b?.error?.message]
+            .filter(Boolean)
+            .join(": ")
+            .replace(/https?:\/\/\S+/g, "")
+            .replace(/[^\w .,:;'()\/-]/g, "")
+            .slice(0, 160),
         )
         .catch(() => "");
       throw new AppError(
         503,
-        `Unable to prepare evidence upload (SharePoint ${r.status}${code ? " " + code : ""})`,
+        `Unable to prepare evidence upload (SharePoint ${r.status}${detail ? " " + detail : ""})`,
       );
     }
     const data = await r.json();
