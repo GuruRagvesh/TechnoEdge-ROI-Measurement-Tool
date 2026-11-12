@@ -25,9 +25,6 @@ export function safeKey(key: string) {
   return key;
 }
 const hash = (b: Buffer) => createHash("sha256").update(b).digest("hex");
-// Microsoft Graph accepts a single-request upload up to 4 MB; larger files use
-// an upload session.
-const SIMPLE_UPLOAD_MAX = 4 * 1024 * 1024;
 export class LocalStorage implements Storage {
   constructor(public root = process.env.LOCAL_STORAGE_PATH || ".data") {}
   private file(key: string) {
@@ -668,28 +665,6 @@ export class GraphStorage implements Storage {
       return etag;
     }
     const parent = await this.folder(parts.join("/"));
-    if (data.length <= SIMPLE_UPLOAD_MAX) {
-      // One atomic call. The record appears only with its full content, so an
-      // interrupted create never leaves an empty file behind (an upload session
-      // creates an empty placeholder as soon as it opens). conflictBehavior=fail
-      // makes a retried create safe: if the first attempt landed, the retry
-      // gets 409 and the caller re-reads the record.
-      const r = await this.request(
-        this.base() +
-          `/items/${parent.id}:/${encodeURIComponent(name)}:/content?@microsoft.graph.conflictBehavior=fail`,
-        {
-          method: "PUT",
-          headers: { "Content-Type": "application/octet-stream" },
-          body: new Uint8Array(data),
-        },
-      );
-      if (!r.ok) throw new AppError(503, "Unable to save record");
-      const result = await r.json();
-      if (!result.eTag) throw new AppError(503, "Unable to save record");
-      if (result.id) this.ids.set(key, result.id);
-      this.remember(key, result.eTag, data);
-      return result.eTag as string;
-    }
     const s = await this.request(
       this.base() +
         `/items/${parent.id}:/${encodeURIComponent(name)}:/createUploadSession`,

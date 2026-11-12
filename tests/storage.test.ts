@@ -157,7 +157,6 @@ describe("storage concurrency and recovery", () => {
     ])
       vi.stubEnv(k, "test");
     let behavior = "",
-      simple = "",
       uploadAuthorization: string | null = "";
     const fetcher = vi.fn(
       async (input: string | URL | Request, init?: RequestInit) => {
@@ -169,7 +168,7 @@ describe("storage concurrency and recovery", () => {
           });
         if (url === "https://test.up.1drv.com/session") {
           uploadAuthorization = new Headers(init?.headers).get("Authorization");
-          return Response.json({ eTag: "created-v2" }, { status: 201 });
+          return Response.json({ eTag: "created-v1" }, { status: 201 });
         }
         if (url.endsWith("/createUploadSession")) {
           behavior = JSON.parse(String(init?.body)).item[
@@ -177,25 +176,13 @@ describe("storage concurrency and recovery", () => {
           ];
           return Response.json({ uploadUrl: "https://test.up.1drv.com/session" });
         }
-        if (init?.method === "PUT" && url.includes(":/content?")) {
-          simple = url;
-          return Response.json({ id: "new", eTag: "created-v1" }, { status: 201 });
-        }
         return Response.json({ id: "folder", eTag: "folder-v1", folder: {} });
       },
     );
     const graph = new GraphStorage(fetcher as typeof fetch, async () => {});
-    // A small record is created in one atomic request, so an interrupted
-    // create can never leave an empty placeholder behind.
     expect(
       await graph.write("rooms/test/new.json", Buffer.from("{}"), null),
     ).toBe("created-v1");
-    expect(new URL(simple).searchParams.get("@microsoft.graph.conflictBehavior")).toBe("fail");
-    expect(fetcher.mock.calls.some(([u]) => String(u).endsWith("/createUploadSession"))).toBe(false);
-    // Over 4 MB uses an upload session, still fail-on-conflict, without the bearer token.
-    expect(
-      await graph.write("rooms/test/big.bin", Buffer.alloc(4 * 1024 * 1024 + 1), null),
-    ).toBe("created-v2");
     expect(behavior).toBe("fail");
     expect(uploadAuthorization).toBeNull();
   });

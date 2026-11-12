@@ -132,17 +132,6 @@ describe("SharePoint call reduction (ETag-validated cache)", () => {
     ).rejects.toBeInstanceOf(Conflict);
   });
 
-  it("creates a record in one atomic request (no upload session, so no empty placeholder)", async () => {
-    const g = new GraphStorage(simFetch);
-    await g.write("rooms/w/participants/a.json", Buffer.from("a"), null);
-    calls = [];
-    await g.write("rooms/w/participants/b.json", Buffer.from('{"b":1}'), null);
-    expect(calls.filter((c) => !c.includes("/sites/"))).toEqual([
-      expect.stringMatching(/^PUT \/items\/[^/]+:\/b\.json:\/content$/),
-    ]);
-    expect(calls.some((c) => c.endsWith("/createUploadSession"))).toBe(false);
-  });
-
   it("treats an empty placeholder left by an interrupted create as no record, and replaces it", async () => {
     const { getJson, mutate, createJson } = await import("../src/lib/storage");
     const g = new GraphStorage(simFetch);
