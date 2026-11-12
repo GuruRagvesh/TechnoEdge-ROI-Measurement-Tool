@@ -56,12 +56,23 @@ describe("live infrastructure contracts without live credentials", () => {
     });
     const g = new GraphStorage(f as typeof fetch, async () => {});
     await Promise.all(
-      Array.from({ length: 20 }, () =>
+      Array.from({ length: 40 }, () =>
         g.request("https://graph.microsoft.com/v1.0/drives/test/root"),
       ),
     );
     expect(tokens).toBe(1);
+    expect(maximum).toBeLessThanOrEqual(16); // default per-instance cap
+    // An explicit cap is enforced exactly.
+    vi.stubEnv("GRAPH_MAX_CONCURRENCY", "4");
+    maximum = 0;
+    const capped = new GraphStorage(f as typeof fetch, async () => {});
+    await Promise.all(
+      Array.from({ length: 20 }, () =>
+        capped.request("https://graph.microsoft.com/v1.0/drives/test/root"),
+      ),
+    );
     expect(maximum).toBeLessThanOrEqual(4);
+    vi.unstubAllEnvs();
   });
   it("retries throttled token acquisition but fails invalid credentials without leaking the provider body", async () => {
     const sleep = vi.fn(async () => {});
