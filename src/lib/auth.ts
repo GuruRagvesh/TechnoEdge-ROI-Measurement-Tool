@@ -102,28 +102,29 @@ export async function logout() {
   jar.delete("te_session");
 }
 type Rate = { window: number; count: number; last: number };
-// One shard per 10 allowed requests (1 to 16 shards): small limits stay
-// exact; large ones (e.g. 180/hour) may admit at most shards-1 extra. A busy
-// or full shard is skipped for another (up to 4), so simultaneous sign-ins do
-// not fail on one contended record and nobody is refused while others have room.
-async function shardedRate(key: string, max: number) {
-  const shards = Math.max(1, Math.min(16, Math.floor(max / 10)));
-  if (shards === 1) return rate(key, max, 0);
-  const per = Math.ceil(max / shards);
-  const order = Array.from({ length: shards }, (_, i) => i).sort(
-    () => Math.random() - 0.5,
-  );
-  let last: unknown;
-  for (const shard of order.slice(0, 4)) {
-    try {
-      return await rate(`${key}-s${shard}`, per, 0);
-    } catch (e) {
-      last = e;
-      if (!(e instanceof AppError) || (e.status !== 429 && e.status !== 409))
-        throw e;
-    }
-  }
-  throw last;
+// The shared sign-in limits (per IP address and overall) are abuse guards, so
+// they are counted in this server instance's memory instead of SharePoint:
+// under a cohort sign-in they cost no storage calls and cannot contend. The
+// per-person limit (6 per hour, 30 s resend cooldown) stays durable below.
+const memoryRates = new WeakMap<
+  object,
+  Map<string, { window: number; count: number }>
+>();
+function memoryRate(key: string, max: number) {
+  const store = storage();
+  let m = memoryRates.get(store);
+  if (!m) memoryRates.set(store, (m = new Map()));
+  const now = Date.now(),
+    old = m.get(key),
+    r = old && old.window + 3600000 > now ? old : { window: now, count: 0 };
+  if (r.count >= max)
+    throw new AppError(
+      429,
+      "Too many verification requests. Please wait before trying again.",
+    );
+  r.count++;
+  if (m.size > 10000) m.clear();
+  m.set(key, r);
 }
 async function rate(key: string, max: number, cooldown: number) {
   await mutate<Rate>(storage(), `auth/rates/${key}.json`, (old) => {
@@ -155,16 +156,13 @@ export async function requestCode(
   source?: string,
 ) {
   email = email.trim().toLowerCase();
-  // Shared limits are split across shards so a whole cohort signing in at
-  // once (often from one office IP) does not queue on a single record. Each
-  // shard allows its share of the hourly limit, so the totals are unchanged.
   if (source)
-    await shardedRate(
+    memoryRate(
       "source-" + digest(source),
       Number(process.env.OTP_IP_HOURLY_LIMIT || 180),
     );
+  memoryRate("global", Number(process.env.EMAIL_HOURLY_LIMIT || 200));
   await rate(stableId(email), 6, 30000);
-  await shardedRate("global", Number(process.env.EMAIL_HOURLY_LIMIT || 200));
   const id = nonce(),
     code = String(randomInt(100000, 1000000));
   const record: Challenge = {

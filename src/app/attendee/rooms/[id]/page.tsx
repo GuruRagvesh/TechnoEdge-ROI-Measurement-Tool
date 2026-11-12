@@ -211,8 +211,8 @@ export default function Assessment({
     if (!detail?.participant.startedAt || detail.participant.submittedAt)
       return;
     // Background check for a server-side lock (deadline or room closed).
-    // The countdown runs in the browser, so every 30 s is enough, and hidden
-    // tabs skip it to spare SharePoint.
+    // The countdown runs in the browser and the server rejects late saves,
+    // so every 2 minutes is enough; hidden tabs skip it to spare SharePoint.
     const timer = setInterval(() => {
       if (document.hidden) return;
       api<Detail>(base)
@@ -228,7 +228,7 @@ export default function Assessment({
           }
         })
         .catch((e) => setError(e.message));
-    }, 30000);
+    }, 120000);
     return () => clearInterval(timer);
   }, [base, detail?.participant.startedAt, detail?.participant.submittedAt]);
   async function start() {
