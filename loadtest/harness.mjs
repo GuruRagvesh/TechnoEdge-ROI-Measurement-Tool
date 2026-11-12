@@ -62,10 +62,11 @@ async function sim(path, init) {
 }
 
 // ---------- identity ----------
+// A person keeps retrying sign-in for about five minutes before giving up.
 async function login(user, name, email) {
-  for (let attempt = 0; attempt < 6; attempt++) {
+  for (let attempt = 0; attempt < 15; attempt++) {
     const r = await call(user, "POST", "/api/auth/request-code", { name, email });
-    if (!r.ok) { await sleep(5000 + Math.random() * 5000); continue; }
+    if (!r.ok) { await sleep(15000 + Math.random() * 10000); continue; }
     let code = null;
     for (let i = 0; i < 20 && !code; i++) { code = (await (await sim("/__mail?email=" + encodeURIComponent(email))).json()).code; if (!code) await sleep(250); }
     const v = await call(user, "POST", "/api/auth/verify-code", { challengeId: r.data.challengeId, code });
@@ -105,6 +106,7 @@ function makeFile(task, i) {
 async function attendee(i, room, endAt) {
   const u = { i, email: `loadtest.user${String(i).padStart(3, "0")}@gmail.example`, cookie: "", result: { ok: false, issues: [] } };
   await sleep((i / USERS) * JOIN_WINDOW_S * 1000);
+  u.arrived = Date.now();
   if (!(await login(u, `Load Test ${i}`, u.email))) { u.result.issues.push("login"); return u; }
   // Identity comes from the verified sign-in; /me (retried) must agree with it.
   let me = await call(u, "GET", "/api/auth/me");
@@ -139,6 +141,7 @@ async function attendee(i, room, endAt) {
   }
   if (!started) { events.selectFailures++; u.result.issues.push("select"); return u; }
   u.deadline = started.deadline;
+  u.startedAfterMs = Date.now() - u.arrived;
   detail = (await call(u, "GET", `/api/rooms/${room}`)).data || detail;
   const p0 = detail?.participant || started;
   // ---- exam activity ----
@@ -340,6 +343,7 @@ async function main() {
     label: LABEL, users: USERS, examMin: EXAM_MIN, instances: BASES.length, polls: { room: ROOM_POLL_S, dashboard: DASH_POLL_S, host: HOST_POLL_S },
     durationS: Math.round((Date.now() - T0) / 1000),
     completedWorkflow: users.filter((u) => u.result.ok).length,
+    arrivalToExamStartS: (() => { const xs = users.filter((u) => u.startedAfterMs).map((u) => u.startedAfterMs / 1000).sort((a, b) => a - b); return xs.length ? { started: xs.length, p50: +pct(xs, 0.5).toFixed(1), p95: +pct(xs, 0.95).toFixed(1), max: +xs.at(-1).toFixed(1) } : null; })(),
     integrityIssues: issues,
     usersWithIssues: users.filter((u) => u.result.issues.length).map((u) => ({ user: u.i, issues: u.result.issues })).slice(0, 50),
     events,

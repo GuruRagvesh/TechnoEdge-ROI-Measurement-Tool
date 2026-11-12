@@ -9,6 +9,7 @@ export type GraphMetrics = {
   retries: number;
   ms: number;
   maxRetryAfterMs: number;
+  waitedMs: number;
 };
 export const graphMetrics = new AsyncLocalStorage<GraphMetrics>();
 export const newGraphMetrics = (): GraphMetrics => ({
@@ -17,4 +18,5 @@ export const newGraphMetrics = (): GraphMetrics => ({
   retries: 0,
   ms: 0,
   maxRetryAfterMs: 0,
+  waitedMs: 0,
 });

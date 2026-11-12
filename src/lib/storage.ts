@@ -133,6 +133,18 @@ export class GraphStorage implements Storage {
     const n = Number(process.env.GRAPH_MAX_CONCURRENCY || 16);
     return Number.isInteger(n) && n >= 1 && n <= 64 ? n : 16;
   }
+  // Waiting out SharePoint's Retry-After is bounded: at most 60 s per wait
+  // and 120 s in total per API request (Vercel allows 300 s), after which the
+  // caller gets a clear "busy, your saved work is safe" error.
+  private mayWait(ms: number) {
+    const waited = graphMetrics.getStore()?.waitedMs ?? 0;
+    return ms <= 60000 && waited + ms <= 120000;
+  }
+  private async wait(ms: number) {
+    const m = graphMetrics.getStore();
+    if (m) m.waitedMs += ms;
+    await this.sleep(ms);
+  }
   private async limited<T>(fn: () => Promise<T>): Promise<T> {
     if (this.active >= GraphStorage.maxConcurrency()) {
       if (this.queue.length >= 500)
@@ -359,13 +371,13 @@ export class GraphStorage implements Storage {
       // instead of each one retrying and burning more of the throttled budget.
       const paused = this.pausedUntil - Date.now();
       if (paused > 0) {
-        if (paused > 20000)
+        if (!this.mayWait(paused))
           throw new AppError(
             503,
             "Microsoft storage is busy. Your last saved work is safe; retry shortly.",
             "STORAGE_THROTTLED",
           );
-        await this.sleep(paused + Math.random() * 250);
+        await this.wait(paused + Math.random() * 250);
       }
       let response: Response;
       try {
@@ -421,13 +433,13 @@ export class GraphStorage implements Storage {
           response.headers.get("Retry-After")
         )
           this.pausedUntil = Math.max(this.pausedUntil, Date.now() + ms);
-        if (attempt === 4 || ms > 20000)
+        if (attempt === 4 || !this.mayWait(ms))
           throw new AppError(
             503,
             "Microsoft storage is busy. Your last saved work is safe; retry shortly.",
             "STORAGE_THROTTLED",
           );
-        if (this.pausedUntil <= Date.now()) await this.sleep(ms);
+        if (this.pausedUntil <= Date.now()) await this.wait(ms);
         continue;
       }
       return response;
