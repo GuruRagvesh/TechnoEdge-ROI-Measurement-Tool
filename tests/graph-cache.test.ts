@@ -132,3 +132,38 @@ describe("SharePoint call reduction (ETag-validated cache)", () => {
     ).rejects.toBeInstanceOf(Conflict);
   });
 });
+
+describe("shared Retry-After pause", () => {
+  it("other requests on the instance wait out SharePoint's Retry-After instead of calling", async () => {
+    const t0 = Date.now();
+    const times: number[] = [];
+    let first = true;
+    const f = (async () => {
+      times.push(Date.now() - t0);
+      if (first) {
+        first = false;
+        return new Response("", {
+          status: 429,
+          headers: { "Retry-After": "1" },
+        });
+      }
+      return Response.json({ access_token: "x", expires_in: 3600 });
+    }) as typeof fetch;
+    const g = new GraphStorage(f);
+    const a = g.request(
+      "https://graph.microsoft.com/v1.0/drives/d/root",
+      {},
+      false,
+    );
+    await new Promise((r) => setTimeout(r, 50)); // A has been throttled by now
+    const b = g.request(
+      "https://graph.microsoft.com/v1.0/drives/d/root",
+      {},
+      false,
+    );
+    await Promise.all([a, b]);
+    // Only A's first call happened inside the 1 s pause; B and A's retry waited.
+    expect(times.filter((t) => t < 950)).toHaveLength(1);
+    expect(times).toHaveLength(3);
+  });
+});

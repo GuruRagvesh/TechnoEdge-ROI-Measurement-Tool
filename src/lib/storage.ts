@@ -105,6 +105,7 @@ export class GraphStorage implements Storage {
   private targetPending?: Promise<void>;
   private targetExpires = 0;
   private active = 0;
+  private pausedUntil = 0;
   private queue: (() => void)[] = [];
   constructor(
     private fetcher: typeof fetch = fetch,
@@ -354,6 +355,18 @@ export class GraphStorage implements Storage {
     if (authenticated && new URL(url).origin !== "https://graph.microsoft.com")
       throw new Error("Invalid Graph API origin");
     for (let attempt = 0; attempt < 5; attempt++) {
+      // When SharePoint has said "wait", every request on this instance waits,
+      // instead of each one retrying and burning more of the throttled budget.
+      const paused = this.pausedUntil - Date.now();
+      if (paused > 0) {
+        if (paused > 20000)
+          throw new AppError(
+            503,
+            "Microsoft storage is busy. Your last saved work is safe; retry shortly.",
+            "STORAGE_THROTTLED",
+          );
+        await this.sleep(paused + Math.random() * 250);
+      }
       let response: Response;
       try {
         const authorization = authenticated
@@ -403,13 +416,18 @@ export class GraphStorage implements Storage {
           m.throttled++;
           m.maxRetryAfterMs = Math.max(m.maxRetryAfterMs, ms);
         }
+        if (
+          (response.status === 429 || response.status === 503) &&
+          response.headers.get("Retry-After")
+        )
+          this.pausedUntil = Math.max(this.pausedUntil, Date.now() + ms);
         if (attempt === 4 || ms > 20000)
           throw new AppError(
             503,
             "Microsoft storage is busy. Your last saved work is safe; retry shortly.",
             "STORAGE_THROTTLED",
           );
-        await this.sleep(ms);
+        if (this.pausedUntil <= Date.now()) await this.sleep(ms);
         continue;
       }
       return response;
