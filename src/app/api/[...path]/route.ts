@@ -30,6 +30,7 @@ import { layoutOf, publicTasks } from "@/lib/challenges";
 import { keyWorkbook, materials } from "@/lib/materials";
 import { evidenceZip, excelReport } from "@/lib/reports";
 import { GraphStorage, getJson, storage } from "@/lib/storage";
+import { graphMetrics, newGraphMetrics } from "@/lib/request-metrics";
 import {
   AppError,
   TASK_IDS,
@@ -540,13 +541,15 @@ async function handler(req: NextRequest) {
       response.status,
       Date.now() - started,
       fault,
+      metrics,
     );
     response.headers.set("X-Request-ID", event.requestId);
     if (response.status >= 500) await reportError(event);
     return response;
   };
+  const metrics = newGraphMetrics();
   try {
-    return await finish(await route(req));
+    return await finish(await graphMetrics.run(metrics, () => route(req)));
   } catch (e) {
     if (e instanceof z.ZodError)
       return finish(

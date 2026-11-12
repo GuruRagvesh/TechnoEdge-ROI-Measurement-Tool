@@ -17,13 +17,35 @@ const cookieOptions = () => ({
   path: "/",
 });
 type Session = { identity: Identity; expires: number; revoked: boolean };
+// Sessions only change when they are revoked, so each server instance keeps a
+// copy for up to 30 s instead of reading SharePoint on every request. Logout
+// clears it on this instance; other instances honour a logged-out token for
+// at most 30 s. Roles are not cached here (see host-registry).
+const SESSION_TTL_MS = 30_000;
+const sessionCache = new WeakMap<
+  object,
+  Map<string, { s: Session | null; until: number }>
+>();
+function sessionsFor(store: object) {
+  let m = sessionCache.get(store);
+  if (!m) sessionCache.set(store, (m = new Map()));
+  return m;
+}
+async function readSession(key: string) {
+  const store = storage(),
+    cache = sessionsFor(store),
+    now = Date.now(),
+    hit = cache.get(key);
+  if (hit && hit.until > now) return hit.s;
+  const s = await getJson<Session>(store, key);
+  if (cache.size > 20000) cache.clear();
+  cache.set(key, { s, until: now + SESSION_TTL_MS });
+  return s;
+}
 export async function session() {
   const token = (await cookies()).get("te_session")?.value;
   if (!token) return null;
-  const s = await getJson<Session>(
-    storage(),
-    `auth/sessions/${digest(token)}.json`,
-  );
+  const s = await readSession(`auth/sessions/${digest(token)}.json`);
   if (!s || s.revoked || s.expires <= Date.now()) return null;
   if (
     s.identity.preview ||
@@ -68,15 +90,15 @@ export async function createSession(identity: Identity) {
 export async function logout() {
   const jar = await cookies();
   const token = jar.get("te_session")?.value;
-  if (token)
-    await mutate<Session>(
-      storage(),
-      `auth/sessions/${digest(token)}.json`,
-      (s) => {
-        if (!s) throw new AppError(401, "Session expired");
-        return { ...s, revoked: true };
-      },
-    );
+  if (token) {
+    const key = `auth/sessions/${digest(token)}.json`;
+    sessionsFor(storage()).delete(key);
+    await mutate<Session>(storage(), key, (s) => {
+      if (!s) throw new AppError(401, "Session expired");
+      return { ...s, revoked: true };
+    });
+    sessionsFor(storage()).delete(key);
+  }
   jar.delete("te_session");
 }
 type Rate = { window: number; count: number; last: number };

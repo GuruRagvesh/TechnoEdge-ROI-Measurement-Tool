@@ -76,7 +76,9 @@ describe("live infrastructure contracts without live credentials", () => {
     await new GraphStorage(f as typeof fetch, sleep).request(
       "https://graph.microsoft.com/v1.0/drives/test/root",
     );
-    expect(sleep).toHaveBeenCalledWith(1000);
+    // Retry-After is honoured: never shorter, at most 25% jitter longer.
+    expect(sleep.mock.calls[0][0]).toBeGreaterThanOrEqual(1000);
+    expect(sleep.mock.calls[0][0]).toBeLessThanOrEqual(1250);
     const bad = vi.fn(
       async () =>
         new Response("sensitive provider diagnostics", { status: 401 }),

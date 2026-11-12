@@ -63,7 +63,9 @@ describe("storage concurrency and recovery", () => {
     expect((await graph.request("https://upload.example", {}, false)).ok).toBe(
       true,
     );
-    expect(sleep.mock.calls[0][0]).toBe(2000);
+    // Retry-After is honoured: never shorter, at most 25% jitter longer.
+    expect(sleep.mock.calls[0][0]).toBeGreaterThanOrEqual(2000);
+    expect(sleep.mock.calls[0][0]).toBeLessThanOrEqual(2500);
     const long = new GraphStorage(
       vi
         .fn()

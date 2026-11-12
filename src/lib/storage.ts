@@ -4,6 +4,7 @@ import path from "node:path";
 import lockfile from "proper-lockfile";
 import { storageLayout } from "./storage-layout";
 import { AppError } from "./types";
+import { graphMetrics } from "./request-metrics";
 import { required, validateConfig } from "./config";
 
 export class Conflict extends Error {}
@@ -82,6 +83,23 @@ type GraphItem = {
   "@microsoft.graph.downloadUrl"?: string;
 };
 export class GraphStorage implements Storage {
+  // Per-instance caches that cut SharePoint calls without risking stale data:
+  //  - content: keyed by path, valid only while SharePoint reports the same
+  //    ETag (checked on every read), small JSON records only;
+  //  - ids: file and folder item ids by path (ids never change; a deleted or
+  //    replaced file makes the conditional update fail and drops the entry).
+  private contentCache = new Map<string, { etag: string; data: Buffer }>();
+  private ids = new Map<string, string>();
+  private folders = new Map<string, GraphItem>();
+  private static readonly CACHE_MAX_BYTES = 256 * 1024;
+  private static readonly CACHE_MAX_ENTRIES = 5000;
+  private remember(key: string, etag: string, data: Buffer) {
+    if (data.length > GraphStorage.CACHE_MAX_BYTES) return;
+    this.contentCache.delete(key);
+    this.contentCache.set(key, { etag, data: Buffer.from(data) });
+    if (this.contentCache.size > GraphStorage.CACHE_MAX_ENTRIES)
+      this.contentCache.delete(this.contentCache.keys().next().value!);
+  }
   private token?: { value: string; expires: number };
   private tokenPending?: Promise<string>;
   private targetPending?: Promise<void>;
@@ -201,7 +219,10 @@ export class GraphStorage implements Storage {
         ? Number(retry) * 1000
         : Math.max(0, Date.parse(retry) - Date.now())
       : 500 * 2 ** attempt + Math.random() * 250;
-    return Number.isFinite(ms) ? ms : 500 * 2 ** attempt;
+    // Spread retries so throttled callers do not all return at once.
+    if (!Number.isFinite(ms)) return 500 * 2 ** attempt;
+    const spread = ms * (1 + Math.random() * 0.25);
+    return Math.round(ms <= 20000 ? Math.min(spread, 20000) : spread);
   }
   async verifyTarget() {
     if (!process.env.GRAPH_SITE_ID) return;
@@ -331,16 +352,26 @@ export class GraphStorage implements Storage {
         const authorization = authenticated
           ? "Bearer " + (await this.accessToken())
           : undefined;
-        response = await this.limited(() =>
-          this.fetcher(url, {
-            ...init,
-            headers: {
-              ...Object.fromEntries(new Headers(init.headers)),
-              ...(authenticated ? { Authorization: authorization! } : {}),
-            },
-            signal: AbortSignal.timeout(30000),
-          }),
-        );
+        const m = graphMetrics.getStore();
+        const started = Date.now();
+        if (m) {
+          m.calls++;
+          if (attempt) m.retries++;
+        }
+        try {
+          response = await this.limited(() =>
+            this.fetcher(url, {
+              ...init,
+              headers: {
+                ...Object.fromEntries(new Headers(init.headers)),
+                ...(authenticated ? { Authorization: authorization! } : {}),
+              },
+              signal: AbortSignal.timeout(30000),
+            }),
+          );
+        } finally {
+          if (m) m.ms += Date.now() - started;
+        }
       } catch (e) {
         if (e instanceof AppError) throw e;
         if (attempt === 4)
@@ -360,6 +391,11 @@ export class GraphStorage implements Storage {
         throw new Conflict();
       if (response.status === 429 || response.status >= 500) {
         const ms = this.retryDelay(response, attempt);
+        const m = graphMetrics.getStore();
+        if (m) {
+          m.throttled++;
+          m.maxRetryAfterMs = Math.max(m.maxRetryAfterMs, ms);
+        }
         if (attempt === 4 || ms > 20000)
           throw new AppError(
             503,
@@ -375,9 +411,15 @@ export class GraphStorage implements Storage {
   }
   private async item(key: string): Promise<GraphItem | null> {
     const r = await this.request(this.location(key));
-    if (r.status === 404) return null;
+    if (r.status === 404) {
+      this.ids.delete(key);
+      this.contentCache.delete(key);
+      return null;
+    }
     if (!r.ok) throw new AppError(503, "Unable to read storage metadata");
-    return r.json();
+    const item = (await r.json()) as GraphItem;
+    if (item?.id) this.ids.set(key, item.id);
+    return item;
   }
   async version(key: string): Promise<string | null> {
     await this.verifyTarget();
@@ -390,15 +432,28 @@ export class GraphStorage implements Storage {
     for (let i = 0; i < 5; i++) {
       const before = await this.item(key);
       if (!before) return null;
+      const hit = this.contentCache.get(key);
+      if (hit && hit.etag === before.eTag)
+        return { data: Buffer.from(hit.data), etag: hit.etag };
       const r = await this.request(this.base() + `/items/${before.id}/content`);
       if (!r.ok) throw new AppError(503, "Unable to read storage content");
       const data = Buffer.from(await r.arrayBuffer());
       const after = await this.item(key);
-      if (before.eTag === after?.eTag) return { data, etag: before.eTag };
+      if (before.eTag === after?.eTag) {
+        this.remember(key, before.eTag, data);
+        return { data, etag: before.eTag };
+      }
     }
     throw new AppError(409, "Record changed repeatedly. Refresh and retry.");
   }
   private async folder(key: string): Promise<GraphItem> {
+    const known = this.folders.get(key);
+    if (known) return known;
+    const resolved = await this.resolveFolder(key);
+    this.folders.set(key, resolved);
+    return resolved;
+  }
+  private async resolveFolder(key: string): Promise<GraphItem> {
     const existing = await this.item(key);
     if (existing) {
       if (!existing.folder) throw new Error("Storage folder collision");
@@ -525,24 +580,39 @@ export class GraphStorage implements Storage {
     safeKey(key);
     const parts = key.split("/");
     const name = parts.pop()!;
-    const parent = await this.folder(parts.join("/"));
     if (expected !== null) {
-      const current = await this.item(key);
-      if (!current || current.eTag !== expected) throw new Conflict();
-      const r = await this.request(
-        this.base() + `/items/${current.id}/content`,
-        {
+      // SharePoint enforces If-Match, so no separate metadata check is needed.
+      let id = this.ids.get(key);
+      if (!id) {
+        const current = await this.item(key);
+        if (!current || current.eTag !== expected) throw new Conflict();
+        id = current.id;
+      }
+      let r: Response;
+      try {
+        r = await this.request(this.base() + `/items/${id}/content`, {
           method: "PUT",
           headers: {
             "Content-Type": "application/octet-stream",
             "If-Match": expected,
           },
           body: new Uint8Array(data),
-        },
-      );
+        });
+      } catch (e) {
+        if (e instanceof Conflict) this.contentCache.delete(key);
+        throw e;
+      }
+      if (r.status === 404) {
+        this.ids.delete(key);
+        this.contentCache.delete(key);
+        throw new Conflict();
+      }
       if (!r.ok) throw new AppError(503, "Unable to save record");
-      return (await r.json()).eTag as string;
+      const etag = (await r.json()).eTag as string;
+      this.remember(key, etag, data);
+      return etag;
     }
+    const parent = await this.folder(parts.join("/"));
     const s = await this.request(
       this.base() +
         `/items/${parent.id}:/${encodeURIComponent(name)}:/createUploadSession`,
@@ -598,7 +668,11 @@ export class GraphStorage implements Storage {
       }
       if (r.status === 200 || r.status === 201) {
         const result = await r.json();
-        if (result.eTag) return result.eTag as string;
+        if (result.eTag) {
+          if (result.id) this.ids.set(key, result.id);
+          this.remember(key, result.eTag, data);
+          return result.eTag as string;
+        }
         const next = Number(result.nextExpectedRanges?.[0]?.split("-")[0]);
         if (!Number.isInteger(next) || next < 0 || next >= data.length)
           throw new AppError(503, "Invalid upload recovery range");

@@ -1,9 +1,18 @@
 import { randomUUID } from "node:crypto";
+import type { GraphMetrics } from "./request-metrics";
+// Application error codes such as STORAGE_THROTTLED (never messages or data).
+function errorCode(fault: unknown) {
+  const code = (fault as { code?: unknown } | undefined)?.code;
+  return typeof code === "string" && /^[A-Z_]{3,40}$/.test(code)
+    ? code
+    : undefined;
+}
 export function requestEvent(
   route: string,
   status: number,
   durationMs: number,
   fault?: unknown,
+  graph?: GraphMetrics,
 ) {
   const event = {
     event: "http_request",
@@ -12,6 +21,8 @@ export function requestEvent(
     status,
     durationMs,
     at: new Date().toISOString(),
+    ...(graph && graph.calls ? { graph } : {}),
+    ...(errorCode(fault) ? { errorCode: errorCode(fault) } : {}),
     ...(fault instanceof Error
       ? {
           errorType: fault.name.replace(/[^A-Za-z]/g, "").slice(0, 40),
