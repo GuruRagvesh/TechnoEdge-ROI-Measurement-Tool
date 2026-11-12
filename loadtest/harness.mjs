@@ -69,7 +69,10 @@ async function login(user, name, email) {
     let code = null;
     for (let i = 0; i < 20 && !code; i++) { code = (await (await sim("/__mail?email=" + encodeURIComponent(email))).json()).code; if (!code) await sleep(250); }
     const v = await call(user, "POST", "/api/auth/verify-code", { challengeId: r.data.challengeId, code });
-    if (v.ok && user.cookie) return true;
+    if (v.ok && user.cookie) {
+      user.verified = v.data?.id ? v.data : v.data?.identity || null;
+      return true;
+    }
     await sleep(5000);
   }
   events.loginFailures++;
@@ -103,9 +106,13 @@ async function attendee(i, room, endAt) {
   const u = { i, email: `loadtest.user${String(i).padStart(3, "0")}@gmail.example`, cookie: "", result: { ok: false, issues: [] } };
   await sleep((i / USERS) * JOIN_WINDOW_S * 1000);
   if (!(await login(u, `Load Test ${i}`, u.email))) { u.result.issues.push("login"); return u; }
-  const me = await call(u, "GET", "/api/auth/me");
-  u.id = me.data?.identity?.id;
-  if (me.data?.identity?.role !== "attendee") u.result.issues.push("role:" + me.data?.identity?.role);
+  // Identity comes from the verified sign-in; /me (retried) must agree with it.
+  let me = await call(u, "GET", "/api/auth/me");
+  for (let a = 0; a < 5 && !me.ok; a++) { await sleep(5000); me = await call(u, "GET", "/api/auth/me"); }
+  u.id = u.verified?.id || me.data?.identity?.id;
+  if (!u.id) { u.result.issues.push("no-identity"); return u; }
+  if (me.ok && me.data?.identity?.id !== u.id) u.result.issues.push("me-mismatch");
+  if (me.ok && me.data?.identity?.role !== "attendee") u.result.issues.push("role:" + me.data?.identity?.role);
   await call(u, "GET", "/api/dashboard");
   // join
   let joined = false;
@@ -334,6 +341,7 @@ async function main() {
     durationS: Math.round((Date.now() - T0) / 1000),
     completedWorkflow: users.filter((u) => u.result.ok).length,
     integrityIssues: issues,
+    usersWithIssues: users.filter((u) => u.result.issues.length).map((u) => ({ user: u.i, issues: u.result.issues })).slice(0, 50),
     events,
     api: { n: allApi.length, failed: allApi.filter((s) => s.status >= 500 || s.status === 599).length, p50: pct(apiMs, 0.5), p95: pct(apiMs, 0.95), p99: pct(apiMs, 0.99) },
     evidenceReadback: { ok: readbackOk, bad: readbackBad },
