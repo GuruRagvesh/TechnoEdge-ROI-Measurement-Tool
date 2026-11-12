@@ -103,7 +103,11 @@ export default function Host() {
   useEffect(() => {
     if (!identity) return;
     void load();
-    const interval = setInterval(() => void load(), 15000);
+    // Each refresh reads every participant from SharePoint; once a minute
+    // (and never in a hidden tab) keeps a live cohort responsive.
+    const interval = setInterval(() => {
+      if (!document.hidden) void load();
+    }, 60000);
     return () => clearInterval(interval);
   }, [identity, load]);
   useEffect(() => {

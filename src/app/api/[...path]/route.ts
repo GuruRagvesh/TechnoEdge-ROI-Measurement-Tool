@@ -13,7 +13,6 @@ import { batchSummary } from "@/lib/batches";
 import {
   createSession,
   logout,
-  requireIdentity,
   requestCode,
   session,
   verifyCode,
@@ -31,7 +30,13 @@ import { layoutOf, publicTasks } from "@/lib/challenges";
 import { keyWorkbook, materials } from "@/lib/materials";
 import { evidenceZip, excelReport } from "@/lib/reports";
 import { GraphStorage, getJson, storage } from "@/lib/storage";
-import { AppError, TASK_IDS, type Participant, type TaskId } from "@/lib/types";
+import {
+  AppError,
+  TASK_IDS,
+  type Identity,
+  type Participant,
+  type TaskId,
+} from "@/lib/types";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 export const maxDuration = 300;
@@ -155,10 +160,19 @@ async function route(req: NextRequest) {
     }
     throw new AppError(404, "Not found");
   }
-  const identity = await requireIdentity();
+  // The session read at the top of the request is reused for every role
+  // check below, instead of re-reading the session and host list from
+  // SharePoint for each check.
+  if (!current) throw new AppError(401, "Please sign in to continue.");
+  const identity = current;
+  const requireRole = (role: Identity["role"]) => {
+    if (identity.role !== role)
+      throw new AppError(403, "You do not have access to this portal.");
+    return identity;
+  };
   await service.defaultRoom();
   if (resource === "programs" && method === "POST") {
-    await requireIdentity("host");
+    requireRole("host");
     const input = z
       .object({
         company: z.string().trim().min(2).max(120),
@@ -180,13 +194,13 @@ async function route(req: NextRequest) {
     );
   }
   if (resource === "batches" && method === "GET") {
-    await requireIdentity("host");
+    requireRole("host");
     return json({ batches: await batchSummary(service, identity) });
   }
   if (resource === "rooms" && !roomId) {
     if (method === "GET") return json({ rooms: await service.rooms(identity) });
     if (method === "POST") {
-      await requireIdentity("host");
+      requireRole("host");
       throw new AppError(
         400,
         "Create a company assessment through the programs workflow. Assessment settings are fixed.",
@@ -220,10 +234,7 @@ async function route(req: NextRequest) {
   const room = await service.room(roomId);
   if (action === "validate" && method === "GET")
     return json({
-      room: await service.validateJoin(
-        roomId,
-        await requireIdentity("attendee"),
-      ),
+      room: await service.validateJoin(roomId, requireRole("attendee")),
     });
   if (method === "GET" && !action) {
     const participant = await service.participant(roomId, identity.id);
@@ -248,10 +259,7 @@ async function route(req: NextRequest) {
   }
   if (action === "join" && method === "POST")
     return json({
-      participant: await service.join(
-        roomId,
-        await requireIdentity("attendee"),
-      ),
+      participant: await service.join(roomId, requireRole("attendee")),
     });
   if (
     [
@@ -262,7 +270,7 @@ async function route(req: NextRequest) {
     ].includes(action) &&
     method === "POST"
   ) {
-    await requireIdentity("attendee");
+    requireRole("attendee");
     if (!(s instanceof GraphStorage))
       throw new AppError(
         400,
@@ -310,7 +318,7 @@ async function route(req: NextRequest) {
     ["start", "save", "submit", "upload"].includes(action) &&
     method === "POST"
   ) {
-    await requireIdentity("attendee");
+    requireRole("attendee");
     let participant: Participant;
     if (action === "start") {
       const input = z
@@ -397,7 +405,7 @@ async function route(req: NextRequest) {
       return json({ downloadUrl: await s.downloadLink(e.path), name: e.name });
     return download(blob.data, e.name, "application/octet-stream");
   }
-  await requireIdentity("host");
+  requireRole("host");
   service.assertHost(room, identity);
   if (action === "participants" && method === "GET")
     return json({

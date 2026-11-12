@@ -12,6 +12,8 @@ export interface Storage {
   read(key: string): Promise<Stored | null>;
   write(key: string, data: Buffer, expected: string | null): Promise<string>;
   list(prefix: string): Promise<string[]>;
+  /** Current version (ETag) of a file without downloading it; null if missing. */
+  version?(key: string): Promise<string | null>;
 }
 export function safeKey(key: string) {
   if (
@@ -376,6 +378,10 @@ export class GraphStorage implements Storage {
     if (r.status === 404) return null;
     if (!r.ok) throw new AppError(503, "Unable to read storage metadata");
     return r.json();
+  }
+  async version(key: string): Promise<string | null> {
+    await this.verifyTarget();
+    return (await this.item(this.physical(key)))?.eTag ?? null;
   }
   async read(key: string): Promise<Stored | null> {
     await this.verifyTarget();
