@@ -189,6 +189,7 @@ const server = http.createServer(async (req, res) => {
     const content = new RegExp(`^/drives/${DRIVE}/items/([^/]+)/content$`).exec(g);
     const children = new RegExp(`^/drives/${DRIVE}/(?:items/([^/:]+)|root)/children$`).exec(g);
     const session = new RegExp(`^/drives/${DRIVE}/items/([^/:]+):/([^/]+):/createUploadSession$`).exec(g);
+    const simple = new RegExp(`^/drives/${DRIVE}/items/([^/:]+):/([^/]+):/content$`).exec(g);
     if (site) [op, ru] = ["site", 1];
     else if (drives) [op, ru] = ["drives", 2];
     else if (byRoot && req.method === "GET") [op, ru] = ["get-item", 1];
@@ -197,6 +198,7 @@ const server = http.createServer(async (req, res) => {
     else if (children && req.method === "GET") [op, ru] = ["list", 2];
     else if (children && req.method === "POST") [op, ru] = ["create-folder", 2];
     else if (session && req.method === "POST") [op, ru] = ["create-upload-session", 2];
+    else if (simple && req.method === "PUT") [op, ru] = ["create", 2];
     else { await body(req); count("unknown " + req.method + " " + g, 404); return notFound(res); }
     const payload = await body(req);
     const wait = charge(ru);
@@ -238,6 +240,18 @@ const server = http.createServer(async (req, res) => {
       const existing = child(parentId, b.name);
       if (existing) { count(op, 409); return send(res, 409, { error: { code: "nameAlreadyExists" } }); }
       const it = create(parentId, b.name, { folder: true }); count(op, 201);
+      return send(res, 201, meta(it));
+    }
+    if (op === "create") {
+      // Single-request upload: the file appears only with its full content.
+      const behavior = url.searchParams.get("@microsoft.graph.conflictBehavior") || "replace";
+      const parentId = simple[1], name = simple[2];
+      const existing = child(parentId, name);
+      if (existing && behavior === "fail") { count(op, 409); return send(res, 409, { error: { code: "nameAlreadyExists" } }); }
+      let it = existing ? items.get(existing) : null;
+      if (it) { it.data = payload; it.eTag = etag(); }
+      else it = create(parentId, name, { data: payload });
+      count(op, 201);
       return send(res, 201, meta(it));
     }
     if (op === "create-upload-session") {

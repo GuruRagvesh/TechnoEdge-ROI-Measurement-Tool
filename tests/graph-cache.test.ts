@@ -131,6 +131,44 @@ describe("SharePoint call reduction (ETag-validated cache)", () => {
       g.write("rooms/y/participants/b.json", Buffer.from("again"), null),
     ).rejects.toBeInstanceOf(Conflict);
   });
+
+  it("creates a record in one atomic request (no upload session, so no empty placeholder)", async () => {
+    const g = new GraphStorage(simFetch);
+    await g.write("rooms/w/participants/a.json", Buffer.from("a"), null);
+    calls = [];
+    await g.write("rooms/w/participants/b.json", Buffer.from('{"b":1}'), null);
+    expect(calls.filter((c) => !c.includes("/sites/"))).toEqual([
+      expect.stringMatching(/^PUT \/items\/[^/]+:\/b\.json:\/content$/),
+    ]);
+    expect(calls.some((c) => c.endsWith("/createUploadSession"))).toBe(false);
+  });
+
+  it("treats an empty placeholder left by an interrupted create as no record, and replaces it", async () => {
+    const { getJson, mutate, createJson } = await import("../src/lib/storage");
+    const g = new GraphStorage(simFetch);
+    await g.write("rooms/v/participants/seed.json", Buffer.from("{}"), null);
+    const auth = { authorization: "Bearer sim-token", "x-sim-host": "graph.microsoft.com" };
+    const folder = await (
+      await fetch(SIM + "/v1.0/drives/sim-drive/root:/Unit/rooms/v/participants", { headers: auth })
+    ).json();
+    // Open upload sessions and never send content, as an interrupted create would.
+    for (const name of ["p.json", "q.json"])
+      await fetch(SIM + `/v1.0/drives/sim-drive/items/${folder.id}:/${name}:/createUploadSession`, {
+        method: "POST",
+        headers: { ...auth, "content-type": "application/json" },
+        body: JSON.stringify({ item: { "@microsoft.graph.conflictBehavior": "fail" } }),
+      });
+    expect((await g.read("rooms/v/participants/p.json"))!.data.length).toBe(0);
+    expect(await getJson(g, "rooms/v/participants/p.json")).toBeNull();
+    expect(
+      await mutate<{ n: number }>(g, "rooms/v/participants/p.json", (old) => ({ n: (old?.n ?? 0) + 1 })),
+    ).toEqual({ n: 1 });
+    expect(await getJson(g, "rooms/v/participants/p.json")).toEqual({ n: 1 });
+    expect(await createJson(g, "rooms/v/participants/q.json", { q: true })).toEqual({ q: true });
+    expect(await getJson(g, "rooms/v/participants/q.json")).toEqual({ q: true });
+    // A real record is never overwritten by createJson.
+    expect(await createJson(g, "rooms/v/participants/q.json", { q: false })).toEqual({ q: true });
+  });
 });
 
 describe("shared Retry-After pause", () => {
