@@ -167,3 +167,20 @@ describe("shared Retry-After pause", () => {
     expect(times).toHaveLength(3);
   });
 });
+
+describe("content cache memory bound", () => {
+  it("never holds more than 32 MB and skips records over 256 KB", async () => {
+    const g = new GraphStorage(simFetch);
+    const big = Buffer.alloc(300 * 1024, 1);
+    await g.write("rooms/z/big.json", big, null);
+    calls = [];
+    await g.read("rooms/z/big.json");
+    expect(calls.filter((c) => c.endsWith("/content"))).toHaveLength(1); // not cached
+    const chunk = Buffer.alloc(200 * 1024, 2);
+    for (let i = 0; i < 180; i++)
+      await g.write(`rooms/z/r${i}.json`, chunk, null); // 36 MB written
+    const bytes = (g as unknown as { cacheBytes: number }).cacheBytes;
+    expect(bytes).toBeLessThanOrEqual(32 * 1024 * 1024);
+    expect(bytes).toBeGreaterThan(30 * 1024 * 1024);
+  }, 120000);
+});

@@ -91,14 +91,29 @@ export class GraphStorage implements Storage {
   private contentCache = new Map<string, { etag: string; data: Buffer }>();
   private ids = new Map<string, string>();
   private folders = new Map<string, GraphItem>();
-  private static readonly CACHE_MAX_BYTES = 256 * 1024;
-  private static readonly CACHE_MAX_ENTRIES = 5000;
+  private static readonly CACHE_MAX_ITEM_BYTES = 256 * 1024;
+  private static readonly CACHE_MAX_TOTAL_BYTES = 32 * 1024 * 1024;
+  private static readonly IDS_MAX = 20000;
+  private cacheBytes = 0;
   private remember(key: string, etag: string, data: Buffer) {
-    if (data.length > GraphStorage.CACHE_MAX_BYTES) return;
-    this.contentCache.delete(key);
+    this.forget(key);
+    if (data.length > GraphStorage.CACHE_MAX_ITEM_BYTES) return;
     this.contentCache.set(key, { etag, data: Buffer.from(data) });
-    if (this.contentCache.size > GraphStorage.CACHE_MAX_ENTRIES)
-      this.contentCache.delete(this.contentCache.keys().next().value!);
+    this.cacheBytes += data.length;
+    // Evict least recently stored entries beyond the memory budget.
+    for (const [k, v] of this.contentCache) {
+      if (this.cacheBytes <= GraphStorage.CACHE_MAX_TOTAL_BYTES) break;
+      this.contentCache.delete(k);
+      this.cacheBytes -= v.data.length;
+    }
+    if (this.ids.size > GraphStorage.IDS_MAX) this.ids.clear();
+  }
+  private forget(key: string) {
+    const old = this.contentCache.get(key);
+    if (old) {
+      this.contentCache.delete(key);
+      this.cacheBytes -= old.data.length;
+    }
   }
   private token?: { value: string; expires: number };
   private tokenPending?: Promise<string>;
@@ -450,7 +465,7 @@ export class GraphStorage implements Storage {
     const r = await this.request(this.location(key));
     if (r.status === 404) {
       this.ids.delete(key);
-      this.contentCache.delete(key);
+      this.forget(key);
       return null;
     }
     if (!r.ok) throw new AppError(503, "Unable to read storage metadata");
@@ -636,12 +651,12 @@ export class GraphStorage implements Storage {
           body: new Uint8Array(data),
         });
       } catch (e) {
-        if (e instanceof Conflict) this.contentCache.delete(key);
+        if (e instanceof Conflict) this.forget(key);
         throw e;
       }
       if (r.status === 404) {
         this.ids.delete(key);
-        this.contentCache.delete(key);
+        this.forget(key);
         throw new Conflict();
       }
       if (!r.ok) throw new AppError(503, "Unable to save record");
