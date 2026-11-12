@@ -10,6 +10,9 @@ export type GraphMetrics = {
   ms: number;
   maxRetryAfterMs: number;
   waitedMs: number;
+  /** PostgreSQL record store, when enabled. */
+  dbQueries?: number;
+  dbMs?: number;
 };
 export const graphMetrics = new AsyncLocalStorage<GraphMetrics>();
 export const newGraphMetrics = (): GraphMetrics => ({

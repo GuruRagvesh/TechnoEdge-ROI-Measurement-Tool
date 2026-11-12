@@ -6,6 +6,7 @@ import { storageLayout } from "./storage-layout";
 import { AppError } from "./types";
 import { graphMetrics } from "./request-metrics";
 import { required, validateConfig } from "./config";
+import { PostgresRecords } from "./record-store";
 
 export class Conflict extends Error {}
 export type Stored = { data: Buffer; etag: string };
@@ -778,13 +779,102 @@ export class GraphStorage implements Storage {
     return result;
   }
 }
+// Live records in PostgreSQL, files in SharePoint (RECORD_STORE=postgres).
+//  - A "record" is any JSON document except config/ (the host allowlist stays
+//    in SharePoint, where administrators edit it).
+//  - Evidence, exports and archives stay in SharePoint, unchanged.
+//  - Records written before the switch are read from SharePoint on first use
+//    and copied in (auth/ records are short-lived and are not carried over:
+//    people signed in before the switch sign in again).
+//  - Each submitted participant record is also copied to SharePoint, so the
+//    business record of results stays there.
+const isRecord = (key: string) =>
+  key.endsWith(".json") && !key.startsWith("config/");
+const carriedOver = (key: string) => !key.startsWith("auth/");
+const isResult = (key: string) =>
+  /^rooms\/[^/]+\/participants\/[^/]+\.json$/.test(key);
+export class HybridStorage extends GraphStorage {
+  constructor(
+    readonly records: PostgresRecords,
+    fetcher?: typeof fetch,
+    sleep?: (ms: number) => Promise<void>,
+    private fallback = process.env.RECORD_SHAREPOINT_FALLBACK !== "off",
+  ) {
+    super(fetcher, sleep);
+  }
+  private async adopt(key: string): Promise<Stored | null> {
+    if (!this.fallback || !carriedOver(key)) return null;
+    const old = await super.read(key);
+    if (!old || !old.data.length) return null;
+    await this.records.create(key, old.data);
+    return this.records.read(key);
+  }
+  async read(key: string): Promise<Stored | null> {
+    safeKey(key);
+    if (!isRecord(key)) return super.read(key);
+    return (await this.records.read(key)) ?? this.adopt(key);
+  }
+  async version(key: string): Promise<string | null> {
+    if (!isRecord(key)) return super.version(key);
+    return (await this.read(key))?.etag ?? null;
+  }
+  async write(key: string, data: Buffer, expected: string | null) {
+    safeKey(key);
+    if (!isRecord(key)) return super.write(key, data, expected);
+    if (expected === null && (await this.adopt(key))) throw new Conflict();
+    const etag =
+      expected === null
+        ? await this.records.create(key, data)
+        : await this.records.update(key, data, expected);
+    if (!etag) throw new Conflict();
+    if (isResult(key)) await this.copyResult(key, data);
+    return etag;
+  }
+  async list(prefix: string) {
+    const keys = new Set(await this.records.children(safeKey(prefix)));
+    if (this.fallback && carriedOver(prefix + "/x"))
+      for (const k of await super.list(prefix))
+        if (isRecord(k)) keys.add(k);
+    return [...keys].sort();
+  }
+  /** Copy of a submitted result in SharePoint; never fails the request. */
+  private async copyResult(key: string, data: Buffer) {
+    try {
+      if (!(JSON.parse(data.toString()) as { submittedAt?: string }).submittedAt)
+        return;
+      await this.copyToSharePoint(key, data);
+    } catch (e) {
+      console.error(
+        JSON.stringify({
+          event: "result_copy_failed",
+          reason: e instanceof Error ? e.name : "unknown",
+          at: new Date().toISOString(),
+        }),
+      );
+    }
+  }
+  /** Writes a record's current content to SharePoint (last write wins). */
+  async copyToSharePoint(key: string, data: Buffer) {
+    for (let i = 0; i < 3; i++) {
+      try {
+        await super.write(key, data, await super.version(key));
+        return;
+      } catch (e) {
+        if (!(e instanceof Conflict)) throw e;
+      }
+    }
+    throw new Conflict();
+  }
+}
 let instance: Storage;
 export function storage() {
   validateConfig();
   return (instance ??=
-    process.env.STORAGE_ADAPTER === "graph"
-      ? new GraphStorage()
-      : new LocalStorage());
+    process.env.STORAGE_ADAPTER !== "graph"
+      ? new LocalStorage()
+      : process.env.RECORD_STORE === "postgres"
+        ? new HybridStorage(new PostgresRecords())
+        : new GraphStorage());
 }
 // A 0-byte record is an empty placeholder left by an interrupted create (an
 // upload session opens it before any content arrives). It holds no data, so it

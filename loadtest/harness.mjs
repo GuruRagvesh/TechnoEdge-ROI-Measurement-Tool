@@ -29,6 +29,18 @@ const TASKS = ["inbox", "tables", "clean", "dashboard", "mbr"];
 const T0 = Date.now();
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const sha = (b) => createHash("sha256").update(b).digest("hex");
+// A pre-authenticated SharePoint download, retried as a browser user would
+// when the connection drops (fault-injection runs drop connections).
+async function simDownload(dl) {
+  for (let i = 0; i < 5; i++) {
+    try {
+      const r = await fetch(SIM + dl.pathname, { headers: { "x-sim-host": dl.hostname } });
+      if (r.ok) return Buffer.from(await r.arrayBuffer());
+    } catch {}
+    await sleep(1000 * (i + 1));
+  }
+  return null;
+}
 
 // ---------- measurement ----------
 const samples = []; // {ep, status, ms, t}
@@ -304,8 +316,8 @@ async function main() {
       let good = false;
       if (link.ok && link.data?.downloadUrl) {
         const dl = new URL(link.data.downloadUrl);
-        const r = await fetch(SIM + dl.pathname, { headers: { "x-sim-host": dl.hostname } });
-        good = r.ok && sha(Buffer.from(await r.arrayBuffer())) === f.sha256;
+        const body = await simDownload(dl);
+        good = !!body && sha(body) === f.sha256;
       }
       if (good) readbackOk++; else { readbackBad++; u.result.issues.push("readback:" + t); u.result.ok = false; }
     }
@@ -317,7 +329,8 @@ async function main() {
   let excel = { ok: false };
   if (ex.ok && ex.data?.downloadUrl) {
     const dl = new URL(ex.data.downloadUrl);
-    const buf = Buffer.from(await (await fetch(SIM + dl.pathname, { headers: { "x-sim-host": dl.hostname } })).arrayBuffer());
+    const buf = await simDownload(dl);
+    if (!buf) throw new Error("export download failed");
     const ExcelJS = createRequire(import.meta.url)("exceljs");
     const wb = new ExcelJS.Workbook();
     await wb.xlsx.load(buf);
