@@ -125,9 +125,16 @@ export class GraphStorage implements Storage {
     const root = process.env.GRAPH_STORAGE_ROOT;
     return root ? safeKey(root) + "/" + logical : logical;
   }
+  // SharePoint calls in flight per server instance. SharePoint's own limit is
+  // per minute (resource units), enforced with 429 + Retry-After, so this cap
+  // only needs to stop runaway bursts; at 4 it queued requests for minutes.
+  static maxConcurrency() {
+    const n = Number(process.env.GRAPH_MAX_CONCURRENCY || 16);
+    return Number.isInteger(n) && n >= 1 && n <= 64 ? n : 16;
+  }
   private async limited<T>(fn: () => Promise<T>): Promise<T> {
-    if (this.active >= 4) {
-      if (this.queue.length >= 200)
+    if (this.active >= GraphStorage.maxConcurrency()) {
+      if (this.queue.length >= 500)
         throw new AppError(
           503,
           "Storage queue busy; retry safely",
@@ -755,6 +762,8 @@ export async function mutate<T>(
       return value;
     } catch (e) {
       if (!(e instanceof Conflict)) throw e;
+      // Back off briefly with jitter so colliding writers do not retry in lockstep.
+      await new Promise((r) => setTimeout(r, Math.random() * 40 * (i + 1)));
     }
   }
   throw new AppError(

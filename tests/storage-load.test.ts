@@ -116,3 +116,38 @@ describe("default room", () => {
     ).toBeLessThanOrEqual(1);
   });
 });
+
+describe("room settings cache", () => {
+  it("closing a room applies at once on this instance and within 15 s elsewhere", async () => {
+    vi.useFakeTimers({ now: Date.parse("2026-11-12T10:00:00Z") });
+    const s = new Counting();
+    const a = new AssessmentService(s),
+      b = new AssessmentService(s);
+    const host = {
+      id: "h1",
+      name: "Host",
+      email: "h@example.com",
+      role: "host" as const,
+    };
+    const { program } = {
+      program: await a.createProgram(
+        host,
+        "Acme Co",
+        "Batch",
+        crypto.randomUUID(),
+        "single",
+      ),
+    };
+    const roomId = program.preRoomId;
+    await b.room(roomId); // instance B has it cached
+    const other = new AssessmentService(new Proxy(s, {})); // a separate instance cache
+    await other.room(roomId);
+    await a.close(roomId, host, true);
+    expect((await a.room(roomId)).closed).toBe(true); // same instance: immediate
+    const reads = s.reads.length;
+    await other.room(roomId); // within 15 s: may still be cached
+    expect(s.reads.length).toBe(reads);
+    vi.advanceTimersByTime(15_001);
+    expect((await other.room(roomId)).closed).toBe(true); // after 15 s: refreshed
+  });
+});
