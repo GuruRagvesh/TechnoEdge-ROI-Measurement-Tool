@@ -77,8 +77,9 @@ describe("live infrastructure contracts without live credentials", () => {
       "https://graph.microsoft.com/v1.0/drives/test/root",
     );
     // Retry-After is honoured: never shorter, at most 25% jitter longer.
-    expect(sleep.mock.calls[0][0]).toBeGreaterThanOrEqual(1000);
-    expect(sleep.mock.calls[0][0]).toBeLessThanOrEqual(1250);
+    const waited = Number((sleep.mock.calls[0] as unknown[])[0]);
+    expect(waited).toBeGreaterThanOrEqual(1000);
+    expect(waited).toBeLessThanOrEqual(1250);
     const bad = vi.fn(
       async () =>
         new Response("sensitive provider diagnostics", { status: 401 }),
