@@ -4,6 +4,7 @@ import path from "node:path";
 import lockfile from "proper-lockfile";
 import { storageLayout } from "./storage-layout";
 import { AppError } from "./types";
+import { graphMetrics } from "./request-metrics";
 import { required, validateConfig } from "./config";
 
 export class Conflict extends Error {}
@@ -82,11 +83,44 @@ type GraphItem = {
   "@microsoft.graph.downloadUrl"?: string;
 };
 export class GraphStorage implements Storage {
+  // Per-instance caches that cut SharePoint calls without risking stale data:
+  //  - content: keyed by path, valid only while SharePoint reports the same
+  //    ETag (checked on every read), small JSON records only;
+  //  - ids: file and folder item ids by path (ids never change; a deleted or
+  //    replaced file makes the conditional update fail and drops the entry).
+  private contentCache = new Map<string, { etag: string; data: Buffer }>();
+  private ids = new Map<string, string>();
+  private folders = new Map<string, GraphItem>();
+  private static readonly CACHE_MAX_ITEM_BYTES = 256 * 1024;
+  private static readonly CACHE_MAX_TOTAL_BYTES = 32 * 1024 * 1024;
+  private static readonly IDS_MAX = 20000;
+  private cacheBytes = 0;
+  private remember(key: string, etag: string, data: Buffer) {
+    this.forget(key);
+    if (data.length > GraphStorage.CACHE_MAX_ITEM_BYTES) return;
+    this.contentCache.set(key, { etag, data: Buffer.from(data) });
+    this.cacheBytes += data.length;
+    // Evict least recently stored entries beyond the memory budget.
+    for (const [k, v] of this.contentCache) {
+      if (this.cacheBytes <= GraphStorage.CACHE_MAX_TOTAL_BYTES) break;
+      this.contentCache.delete(k);
+      this.cacheBytes -= v.data.length;
+    }
+    if (this.ids.size > GraphStorage.IDS_MAX) this.ids.clear();
+  }
+  private forget(key: string) {
+    const old = this.contentCache.get(key);
+    if (old) {
+      this.contentCache.delete(key);
+      this.cacheBytes -= old.data.length;
+    }
+  }
   private token?: { value: string; expires: number };
   private tokenPending?: Promise<string>;
   private targetPending?: Promise<void>;
   private targetExpires = 0;
   private active = 0;
+  private pausedUntil = 0;
   private queue: (() => void)[] = [];
   constructor(
     private fetcher: typeof fetch = fetch,
@@ -107,9 +141,28 @@ export class GraphStorage implements Storage {
     const root = process.env.GRAPH_STORAGE_ROOT;
     return root ? safeKey(root) + "/" + logical : logical;
   }
+  // SharePoint calls in flight per server instance. SharePoint's own limit is
+  // per minute (resource units), enforced with 429 + Retry-After, so this cap
+  // only needs to stop runaway bursts; at 4 it queued requests for minutes.
+  static maxConcurrency() {
+    const n = Number(process.env.GRAPH_MAX_CONCURRENCY || 16);
+    return Number.isInteger(n) && n >= 1 && n <= 64 ? n : 16;
+  }
+  // Waiting out SharePoint's Retry-After is bounded: at most 60 s per wait
+  // and 120 s in total per API request (Vercel allows 300 s), after which the
+  // caller gets a clear "busy, your saved work is safe" error.
+  private mayWait(ms: number) {
+    const waited = graphMetrics.getStore()?.waitedMs ?? 0;
+    return ms <= 60000 && waited + ms <= 120000;
+  }
+  private async wait(ms: number) {
+    const m = graphMetrics.getStore();
+    if (m) m.waitedMs += ms;
+    await this.sleep(ms);
+  }
   private async limited<T>(fn: () => Promise<T>): Promise<T> {
-    if (this.active >= 4) {
-      if (this.queue.length >= 200)
+    if (this.active >= GraphStorage.maxConcurrency()) {
+      if (this.queue.length >= 500)
         throw new AppError(
           503,
           "Storage queue busy; retry safely",
@@ -201,7 +254,10 @@ export class GraphStorage implements Storage {
         ? Number(retry) * 1000
         : Math.max(0, Date.parse(retry) - Date.now())
       : 500 * 2 ** attempt + Math.random() * 250;
-    return Number.isFinite(ms) ? ms : 500 * 2 ** attempt;
+    // Spread retries so throttled callers do not all return at once.
+    if (!Number.isFinite(ms)) return 500 * 2 ** attempt;
+    const spread = ms * (1 + Math.random() * 0.25);
+    return Math.round(ms <= 20000 ? Math.min(spread, 20000) : spread);
   }
   async verifyTarget() {
     if (!process.env.GRAPH_SITE_ID) return;
@@ -326,21 +382,43 @@ export class GraphStorage implements Storage {
     if (authenticated && new URL(url).origin !== "https://graph.microsoft.com")
       throw new Error("Invalid Graph API origin");
     for (let attempt = 0; attempt < 5; attempt++) {
+      // When SharePoint has said "wait", every request on this instance waits,
+      // instead of each one retrying and burning more of the throttled budget.
+      const paused = this.pausedUntil - Date.now();
+      if (paused > 0) {
+        if (!this.mayWait(paused))
+          throw new AppError(
+            503,
+            "Microsoft storage is busy. Your last saved work is safe; retry shortly.",
+            "STORAGE_THROTTLED",
+          );
+        await this.wait(paused + Math.random() * 250);
+      }
       let response: Response;
       try {
         const authorization = authenticated
           ? "Bearer " + (await this.accessToken())
           : undefined;
-        response = await this.limited(() =>
-          this.fetcher(url, {
-            ...init,
-            headers: {
-              ...Object.fromEntries(new Headers(init.headers)),
-              ...(authenticated ? { Authorization: authorization! } : {}),
-            },
-            signal: AbortSignal.timeout(30000),
-          }),
-        );
+        const m = graphMetrics.getStore();
+        const started = Date.now();
+        if (m) {
+          m.calls++;
+          if (attempt) m.retries++;
+        }
+        try {
+          response = await this.limited(() =>
+            this.fetcher(url, {
+              ...init,
+              headers: {
+                ...Object.fromEntries(new Headers(init.headers)),
+                ...(authenticated ? { Authorization: authorization! } : {}),
+              },
+              signal: AbortSignal.timeout(30000),
+            }),
+          );
+        } finally {
+          if (m) m.ms += Date.now() - started;
+        }
       } catch (e) {
         if (e instanceof AppError) throw e;
         if (attempt === 4)
@@ -360,13 +438,23 @@ export class GraphStorage implements Storage {
         throw new Conflict();
       if (response.status === 429 || response.status >= 500) {
         const ms = this.retryDelay(response, attempt);
-        if (attempt === 4 || ms > 20000)
+        const m = graphMetrics.getStore();
+        if (m) {
+          m.throttled++;
+          m.maxRetryAfterMs = Math.max(m.maxRetryAfterMs, ms);
+        }
+        if (
+          (response.status === 429 || response.status === 503) &&
+          response.headers.get("Retry-After")
+        )
+          this.pausedUntil = Math.max(this.pausedUntil, Date.now() + ms);
+        if (attempt === 4 || !this.mayWait(ms))
           throw new AppError(
             503,
             "Microsoft storage is busy. Your last saved work is safe; retry shortly.",
             "STORAGE_THROTTLED",
           );
-        await this.sleep(ms);
+        if (this.pausedUntil <= Date.now()) await this.wait(ms);
         continue;
       }
       return response;
@@ -375,9 +463,15 @@ export class GraphStorage implements Storage {
   }
   private async item(key: string): Promise<GraphItem | null> {
     const r = await this.request(this.location(key));
-    if (r.status === 404) return null;
+    if (r.status === 404) {
+      this.ids.delete(key);
+      this.forget(key);
+      return null;
+    }
     if (!r.ok) throw new AppError(503, "Unable to read storage metadata");
-    return r.json();
+    const item = (await r.json()) as GraphItem;
+    if (item?.id) this.ids.set(key, item.id);
+    return item;
   }
   async version(key: string): Promise<string | null> {
     await this.verifyTarget();
@@ -390,15 +484,28 @@ export class GraphStorage implements Storage {
     for (let i = 0; i < 5; i++) {
       const before = await this.item(key);
       if (!before) return null;
+      const hit = this.contentCache.get(key);
+      if (hit && hit.etag === before.eTag)
+        return { data: Buffer.from(hit.data), etag: hit.etag };
       const r = await this.request(this.base() + `/items/${before.id}/content`);
       if (!r.ok) throw new AppError(503, "Unable to read storage content");
       const data = Buffer.from(await r.arrayBuffer());
       const after = await this.item(key);
-      if (before.eTag === after?.eTag) return { data, etag: before.eTag };
+      if (before.eTag === after?.eTag) {
+        this.remember(key, before.eTag, data);
+        return { data, etag: before.eTag };
+      }
     }
     throw new AppError(409, "Record changed repeatedly. Refresh and retry.");
   }
   private async folder(key: string): Promise<GraphItem> {
+    const known = this.folders.get(key);
+    if (known) return known;
+    const resolved = await this.resolveFolder(key);
+    this.folders.set(key, resolved);
+    return resolved;
+  }
+  private async resolveFolder(key: string): Promise<GraphItem> {
     const existing = await this.item(key);
     if (existing) {
       if (!existing.folder) throw new Error("Storage folder collision");
@@ -525,24 +632,39 @@ export class GraphStorage implements Storage {
     safeKey(key);
     const parts = key.split("/");
     const name = parts.pop()!;
-    const parent = await this.folder(parts.join("/"));
     if (expected !== null) {
-      const current = await this.item(key);
-      if (!current || current.eTag !== expected) throw new Conflict();
-      const r = await this.request(
-        this.base() + `/items/${current.id}/content`,
-        {
+      // SharePoint enforces If-Match, so no separate metadata check is needed.
+      let id = this.ids.get(key);
+      if (!id) {
+        const current = await this.item(key);
+        if (!current || current.eTag !== expected) throw new Conflict();
+        id = current.id;
+      }
+      let r: Response;
+      try {
+        r = await this.request(this.base() + `/items/${id}/content`, {
           method: "PUT",
           headers: {
             "Content-Type": "application/octet-stream",
             "If-Match": expected,
           },
           body: new Uint8Array(data),
-        },
-      );
+        });
+      } catch (e) {
+        if (e instanceof Conflict) this.forget(key);
+        throw e;
+      }
+      if (r.status === 404) {
+        this.ids.delete(key);
+        this.forget(key);
+        throw new Conflict();
+      }
       if (!r.ok) throw new AppError(503, "Unable to save record");
-      return (await r.json()).eTag as string;
+      const etag = (await r.json()).eTag as string;
+      this.remember(key, etag, data);
+      return etag;
     }
+    const parent = await this.folder(parts.join("/"));
     const s = await this.request(
       this.base() +
         `/items/${parent.id}:/${encodeURIComponent(name)}:/createUploadSession`,
@@ -598,7 +720,11 @@ export class GraphStorage implements Storage {
       }
       if (r.status === 200 || r.status === 201) {
         const result = await r.json();
-        if (result.eTag) return result.eTag as string;
+        if (result.eTag) {
+          if (result.id) this.ids.set(key, result.id);
+          this.remember(key, result.eTag, data);
+          return result.eTag as string;
+        }
         const next = Number(result.nextExpectedRanges?.[0]?.split("-")[0]);
         if (!Number.isInteger(next) || next < 0 || next >= data.length)
           throw new AppError(503, "Invalid upload recovery range");
@@ -660,9 +786,14 @@ export function storage() {
       ? new GraphStorage()
       : new LocalStorage());
 }
+// A 0-byte record is an empty placeholder left by an interrupted create (an
+// upload session opens it before any content arrives). It holds no data, so it
+// reads as "no record yet"; the next write replaces it under its own ETag.
+const record = <T>(data: Buffer): T | null =>
+  data.length ? (JSON.parse(data.toString()) as T) : null;
 export async function getJson<T>(s: Storage, key: string): Promise<T | null> {
   const r = await s.read(key);
-  return r ? JSON.parse(r.data.toString()) : null;
+  return r ? record<T>(r.data) : null;
 }
 export async function mutate<T>(
   s: Storage,
@@ -671,7 +802,7 @@ export async function mutate<T>(
 ): Promise<T> {
   for (let i = 0; i < 8; i++) {
     const before = await s.read(key);
-    const value = fn(before ? JSON.parse(before.data.toString()) : null);
+    const value = fn(before ? record<T>(before.data) : null);
     try {
       await s.write(
         key,
@@ -681,6 +812,8 @@ export async function mutate<T>(
       return value;
     } catch (e) {
       if (!(e instanceof Conflict)) throw e;
+      // Back off briefly with jitter so colliding writers do not retry in lockstep.
+      await new Promise((r) => setTimeout(r, Math.random() * 40 * (i + 1)));
     }
   }
   throw new AppError(
@@ -694,7 +827,9 @@ export async function createJson<T>(s: Storage, key: string, value: T) {
     await s.write(key, Buffer.from(JSON.stringify(value)), null);
     return value;
   } catch (e) {
-    if (e instanceof Conflict) return (await getJson<T>(s, key))!;
-    throw e;
+    if (!(e instanceof Conflict)) throw e;
+    const existing = await getJson<T>(s, key);
+    // An empty placeholder is replaced; a real record wins.
+    return existing ?? mutate<T>(s, key, (old) => old ?? value);
   }
 }

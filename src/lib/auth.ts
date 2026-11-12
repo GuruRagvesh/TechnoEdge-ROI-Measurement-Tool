@@ -17,13 +17,35 @@ const cookieOptions = () => ({
   path: "/",
 });
 type Session = { identity: Identity; expires: number; revoked: boolean };
+// Sessions only change when they are revoked, so each server instance keeps a
+// copy for up to 30 s instead of reading SharePoint on every request. Logout
+// clears it on this instance; other instances honour a logged-out token for
+// at most 30 s. Roles are not cached here (see host-registry).
+const SESSION_TTL_MS = 30_000;
+const sessionCache = new WeakMap<
+  object,
+  Map<string, { s: Session | null; until: number }>
+>();
+function sessionsFor(store: object) {
+  let m = sessionCache.get(store);
+  if (!m) sessionCache.set(store, (m = new Map()));
+  return m;
+}
+async function readSession(key: string) {
+  const store = storage(),
+    cache = sessionsFor(store),
+    now = Date.now(),
+    hit = cache.get(key);
+  if (hit && hit.until > now) return hit.s;
+  const s = await getJson<Session>(store, key);
+  if (cache.size > 20000) cache.clear();
+  cache.set(key, { s, until: now + SESSION_TTL_MS });
+  return s;
+}
 export async function session() {
   const token = (await cookies()).get("te_session")?.value;
   if (!token) return null;
-  const s = await getJson<Session>(
-    storage(),
-    `auth/sessions/${digest(token)}.json`,
-  );
+  const s = await readSession(`auth/sessions/${digest(token)}.json`);
   if (!s || s.revoked || s.expires <= Date.now()) return null;
   if (
     s.identity.preview ||
@@ -68,18 +90,42 @@ export async function createSession(identity: Identity) {
 export async function logout() {
   const jar = await cookies();
   const token = jar.get("te_session")?.value;
-  if (token)
-    await mutate<Session>(
-      storage(),
-      `auth/sessions/${digest(token)}.json`,
-      (s) => {
-        if (!s) throw new AppError(401, "Session expired");
-        return { ...s, revoked: true };
-      },
-    );
+  if (token) {
+    const key = `auth/sessions/${digest(token)}.json`;
+    sessionsFor(storage()).delete(key);
+    await mutate<Session>(storage(), key, (s) => {
+      if (!s) throw new AppError(401, "Session expired");
+      return { ...s, revoked: true };
+    });
+    sessionsFor(storage()).delete(key);
+  }
   jar.delete("te_session");
 }
 type Rate = { window: number; count: number; last: number };
+// The shared sign-in limits (per IP address and overall) are abuse guards, so
+// they are counted in this server instance's memory instead of SharePoint:
+// under a cohort sign-in they cost no storage calls and cannot contend. The
+// per-person limit (6 per hour, 30 s resend cooldown) stays durable below.
+const memoryRates = new WeakMap<
+  object,
+  Map<string, { window: number; count: number }>
+>();
+function memoryRate(key: string, max: number) {
+  const store = storage();
+  let m = memoryRates.get(store);
+  if (!m) memoryRates.set(store, (m = new Map()));
+  const now = Date.now(),
+    old = m.get(key),
+    r = old && old.window + 3600000 > now ? old : { window: now, count: 0 };
+  if (r.count >= max)
+    throw new AppError(
+      429,
+      "Too many verification requests. Please wait before trying again.",
+    );
+  r.count++;
+  if (m.size > 10000) m.clear();
+  m.set(key, r);
+}
 async function rate(key: string, max: number, cooldown: number) {
   await mutate<Rate>(storage(), `auth/rates/${key}.json`, (old) => {
     const now = Date.now();
@@ -111,13 +157,12 @@ export async function requestCode(
 ) {
   email = email.trim().toLowerCase();
   if (source)
-    await rate(
+    memoryRate(
       "source-" + digest(source),
       Number(process.env.OTP_IP_HOURLY_LIMIT || 180),
-      0,
     );
+  memoryRate("global", Number(process.env.EMAIL_HOURLY_LIMIT || 200));
   await rate(stableId(email), 6, 30000);
-  await rate("global", Number(process.env.EMAIL_HOURLY_LIMIT || 200), 0);
   const id = nonce(),
     code = String(randomInt(100000, 1000000));
   const record: Challenge = {

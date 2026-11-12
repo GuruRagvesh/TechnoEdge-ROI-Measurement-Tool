@@ -17,6 +17,16 @@ import { metrics } from "./metrics";
 export const roomKey = (id: string) => `rooms/${id}/room.json`;
 export const participantKey = (room: string, id: string) =>
   `rooms/${room}/participants/${id}.json`;
+const ROOM_TTL_MS = 15_000;
+const roomCaches = new WeakMap<
+  Storage,
+  Map<string, { room: Room; until: number }>
+>();
+function roomCacheFor(store: Storage) {
+  let m = roomCaches.get(store);
+  if (!m) roomCaches.set(store, (m = new Map()));
+  return m;
+}
 const defaultRooms = new WeakMap<
   Storage,
   { room: Promise<Room>; expires: number }
@@ -50,7 +60,13 @@ export class AssessmentService {
       closed: false,
     });
   }
+  // Room settings change only when a host closes or reopens a room, so each
+  // server instance reuses a room record for up to 15 s (this instance sees
+  // its own changes at once). Per-participant deadlines are not affected.
   async room(id: string) {
+    const cache = roomCacheFor(this.store),
+      hit = cache.get(id);
+    if (hit && hit.until > Date.now()) return hit.room;
     const r = await getJson<Room>(this.store, roomKey(id));
     if (!r)
       throw new AppError(
@@ -58,6 +74,8 @@ export class AssessmentService {
         "Invalid room code. Check the code with your coordinator.",
         "INVALID_ROOM",
       );
+    if (cache.size > 2000) cache.clear();
+    cache.set(id, { room: r, until: Date.now() + ROOM_TTL_MS });
     return r;
   }
   assertHost(room: Room, host: Identity) {
@@ -690,10 +708,15 @@ export class AssessmentService {
   }
   async close(roomId: string, host: Identity, closed: boolean) {
     this.assertHost(await this.room(roomId), host);
-    return mutate<Room>(this.store, roomKey(roomId), (r) => {
+    const room = await mutate<Room>(this.store, roomKey(roomId), (r) => {
       if (!r) throw new AppError(404, "Room missing");
       return { ...r, closed };
     });
+    roomCacheFor(this.store).set(roomId, {
+      room,
+      until: Date.now() + ROOM_TTL_MS,
+    });
+    return room;
   }
 }
 export { comparison, metrics } from "./metrics";
