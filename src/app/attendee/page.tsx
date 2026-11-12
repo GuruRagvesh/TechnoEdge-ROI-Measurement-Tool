@@ -56,7 +56,9 @@ export default function Attendee() {
           if (!cancelled) setError(e.message);
         });
     void load();
-    const timer = setInterval(() => void load(), 15000);
+    const timer = setInterval(() => {
+      if (!document.hidden) void load();
+    }, 60000);
     return () => {
       cancelled = true;
       clearInterval(timer);
@@ -209,7 +211,8 @@ export default function Attendee() {
               <h2>{focusCard.roomLabel}</h2>
               <p>
                 {focusCard.submittedAt
-                  ? "Submitted " + new Date(focusCard.submittedAt).toLocaleString()
+                  ? "Submitted " +
+                    new Date(focusCard.submittedAt).toLocaleString()
                   : focusCard.status === "In progress"
                     ? "In progress · your work saves automatically"
                     : "Not started"}

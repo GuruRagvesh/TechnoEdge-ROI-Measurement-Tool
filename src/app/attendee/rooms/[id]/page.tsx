@@ -210,7 +210,11 @@ export default function Assessment({
   useEffect(() => {
     if (!detail?.participant.startedAt || detail.participant.submittedAt)
       return;
+    // Background check for a server-side lock (deadline or room closed).
+    // The countdown runs in the browser, so every 30 s is enough, and hidden
+    // tabs skip it to spare SharePoint.
     const timer = setInterval(() => {
+      if (document.hidden) return;
       api<Detail>(base)
         .then((d) => {
           offset.current = Date.parse(d.serverTime) - Date.now();
@@ -224,7 +228,7 @@ export default function Assessment({
           }
         })
         .catch((e) => setError(e.message));
-    }, 15000);
+    }, 30000);
     return () => clearInterval(timer);
   }, [base, detail?.participant.startedAt, detail?.participant.submittedAt]);
   async function start() {
@@ -234,7 +238,11 @@ export default function Assessment({
       await api(base + "/start", { selected });
       install(await api<Detail>(base));
     } catch (e) {
-      setError((e as Error).message);
+      // The selection may have been saved even if a reply was lost or slow:
+      // re-read the server record and continue if it holds three challenges.
+      const saved = await api<Detail>(base).catch(() => null);
+      if (saved && saved.participant.selected.length === 3) install(saved);
+      else setError((e as Error).message);
     } finally {
       setBusy(false);
     }

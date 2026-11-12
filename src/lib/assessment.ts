@@ -17,12 +17,26 @@ import { metrics } from "./metrics";
 export const roomKey = (id: string) => `rooms/${id}/room.json`;
 export const participantKey = (room: string, id: string) =>
   `rooms/${room}/participants/${id}.json`;
+const defaultRooms = new WeakMap<
+  Storage,
+  { room: Promise<Room>; expires: number }
+>();
 export class AssessmentService {
   constructor(
     public store: Storage,
     private clock = () => Date.now(),
   ) {}
+  // Ensured once per server instance (re-checked every 5 minutes), not on
+  // every request: each attempt is a SharePoint write plus a read.
   async defaultRoom() {
+    const ready = defaultRooms.get(this.store);
+    if (ready && ready.expires > Date.now()) return ready.room;
+    const room = this.createDefaultRoom();
+    defaultRooms.set(this.store, { room, expires: Date.now() + 300_000 });
+    room.catch(() => defaultRooms.delete(this.store));
+    return room;
+  }
+  private createDefaultRoom() {
     return createJson<Room>(this.store, roomKey("ai-productivity-pre"), {
       scoringVersion: "corporate-60-v1",
       optionLayout: CURRENT_OPTION_LAYOUT,
