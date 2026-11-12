@@ -20,8 +20,11 @@ type Session = { identity: Identity; expires: number; revoked: boolean };
 // Sessions only change when they are revoked, so each server instance keeps a
 // copy for up to 30 s instead of reading SharePoint on every request. Logout
 // clears it on this instance; other instances honour a logged-out token for
-// at most 30 s. Roles are not cached here (see host-registry).
-const SESSION_TTL_MS = 30_000;
+// at most 30 s. Roles are not cached here (see host-registry). With records in
+// PostgreSQL a session read costs nothing in SharePoint, so there is no cache
+// and a logout applies everywhere at once.
+const SESSION_TTL_MS = () =>
+  process.env.RECORD_STORE === "postgres" ? 0 : 30_000;
 const sessionCache = new WeakMap<
   object,
   Map<string, { s: Session | null; until: number }>
@@ -38,8 +41,10 @@ async function readSession(key: string) {
     hit = cache.get(key);
   if (hit && hit.until > now) return hit.s;
   const s = await getJson<Session>(store, key);
+  const ttl = SESSION_TTL_MS();
+  if (!ttl) return s;
   if (cache.size > 20000) cache.clear();
-  cache.set(key, { s, until: now + SESSION_TTL_MS });
+  cache.set(key, { s, until: now + ttl });
   return s;
 }
 export async function session() {

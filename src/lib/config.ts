@@ -62,6 +62,9 @@ export function validateConfig() {
       "EMAIL_FROM",
       "IDENTITY_PEPPER",
     ].forEach(required);
+    if (process.env.RECORD_STORE === "postgres") required("DATABASE_URL");
+    else if (process.env.RECORD_STORE && process.env.RECORD_STORE !== "graph")
+      throw new Error("RECORD_STORE must be graph or postgres");
     if (process.env.MAIL_PROVIDER === "resend") required("RESEND_API_KEY");
     else if (process.env.MAIL_PROVIDER === "smtp")
       ["SMTP_HOST", "SMTP_USER", "SMTP_PASSWORD"].forEach(required);

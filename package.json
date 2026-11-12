@@ -21,7 +21,8 @@
     "hosts": "node --env-file-if-exists=.env.local scripts/run.mjs scripts/host-registry.ts",
     "infrastructure:check": "node --env-file-if-exists=.env.local scripts/run.mjs scripts/infrastructure-check.ts",
     "email:probe": "node --env-file-if-exists=.env.local scripts/run.mjs scripts/email-probe.ts",
-    "storage:cohort-probe": "node --env-file-if-exists=.env.local scripts/run.mjs scripts/cohort-probe.ts"
+    "storage:cohort-probe": "node --env-file-if-exists=.env.local scripts/run.mjs scripts/cohort-probe.ts",
+    "records:to-sharepoint": "node --env-file-if-exists=.env.local scripts/run.mjs scripts/records-to-sharepoint.ts"
   },
   "dependencies": {
     "docx": "^9.5.0",
@@ -31,6 +32,7 @@
     "next": "^16.0.0",
     "nodemailer": "^10.3.1",
     "openid-client": "^6.8.0",
+    "pg": "^8.23.1",
     "proper-lockfile": "^4.1.2",
     "react": "^19.2.0",
     "react-dom": "^19.2.0",
@@ -40,6 +42,7 @@
     "@playwright/test": "^1.56.0",
     "@types/node": "^22.0.0",
     "@types/nodemailer": "^7.0.0",
+    "@types/pg": "^8.23.1",
     "@types/proper-lockfile": "^4.1.4",
     "@types/react": "^19.0.0",
     "@types/react-dom": "^19.0.0",

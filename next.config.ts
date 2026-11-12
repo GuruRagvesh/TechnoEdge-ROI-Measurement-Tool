@@ -9,7 +9,7 @@ const config: NextConfig = {
     : {}),
   output: "standalone",
   distDir: process.env.NEXT_DIST_DIR || ".next-app",
-  serverExternalPackages: ["exceljs", "proper-lockfile"],
+  serverExternalPackages: ["exceljs", "proper-lockfile", "pg"],
   async headers() {
     return [
       {
