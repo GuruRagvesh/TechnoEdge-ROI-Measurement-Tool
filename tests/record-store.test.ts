@@ -140,6 +140,23 @@ describe.skipIf(!DB)("PostgreSQL record store", () => {
     expect(JSON.parse((await sp.read(key))!.data.toString()).grades).toEqual({ a: 3 });
   });
 
+  it("hides records from any database role other than the app's (row-level security)", async () => {
+    const { Client } = await import("pg");
+    await records.create(`rooms/${room()}/participants/rls.json`, Buffer.from("{}"));
+    const c = new Client({ connectionString: DB });
+    await c.connect();
+    try {
+      await c.query("DO $$ BEGIN CREATE ROLE web_api_test NOLOGIN; EXCEPTION WHEN duplicate_object THEN NULL; END $$");
+      await c.query("GRANT SELECT ON app_records TO web_api_test");
+      await c.query("BEGIN; SET LOCAL ROLE web_api_test");
+      const r = await c.query("SELECT count(*)::int AS n FROM app_records");
+      await c.query("ROLLBACK");
+      expect(r.rows[0].n).toBe(0);
+    } finally {
+      await c.end();
+    }
+  });
+
   it("reports an unreachable database as 503 without detail", async () => {
     const down = new PostgresRecords({ host: "127.0.0.1", port: 1, connectionTimeoutMillis: 500 });
     const err = await down.read("rooms/x/participants/p.json").catch((e) => e);
