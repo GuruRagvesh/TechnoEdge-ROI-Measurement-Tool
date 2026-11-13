@@ -872,7 +872,8 @@ export function storage() {
   return (instance ??=
     process.env.STORAGE_ADAPTER !== "graph"
       ? new LocalStorage()
-      : process.env.RECORD_STORE === "postgres"
+      : process.env.RECORD_STORE === "postgres" &&
+          process.env.RECORD_STORE_ACTIVE === "yes"
         ? new HybridStorage(new PostgresRecords())
         : new GraphStorage());
 }

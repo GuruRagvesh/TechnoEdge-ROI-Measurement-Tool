@@ -27,6 +27,14 @@ export async function GET() {
       },
     );
   } catch (e) {
+    console.error(
+      JSON.stringify({
+        event: "health_failed",
+        name: e instanceof Error ? e.name : "unknown",
+        code: (e as { code?: string })?.code,
+        at: new Date().toISOString(),
+      }),
+    );
     // Name the failing setting so operators can fix it. Only fixed messages
     // from validateConfig pass; a setting's value is never included.
     const message = e instanceof Error ? e.message : "";
