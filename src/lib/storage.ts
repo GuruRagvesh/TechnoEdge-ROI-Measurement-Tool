@@ -784,13 +784,13 @@ export class GraphStorage implements Storage {
 //    in SharePoint, where administrators edit it).
 //  - Evidence, exports and archives stay in SharePoint, unchanged.
 //  - Records written before the switch are read from SharePoint on first use
-//    and copied in (auth/ records are short-lived and are not carried over:
-//    people signed in before the switch sign in again).
+//    and copied in, sessions included, so nobody is signed out by the switch.
 //  - Each submitted participant record is also copied to SharePoint, so the
 //    business record of results stays there.
 const isRecord = (key: string) =>
   key.endsWith(".json") && !key.startsWith("config/");
-const carriedOver = (key: string) => !key.startsWith("auth/");
+// Everything written before the switch is carried over on first use.
+const carriedOver = (key: string) => key.length > 0;
 const isResult = (key: string) =>
   /^rooms\/[^/]+\/participants\/[^/]+\.json$/.test(key);
 export class HybridStorage extends GraphStorage {
@@ -872,8 +872,7 @@ export function storage() {
   return (instance ??=
     process.env.STORAGE_ADAPTER !== "graph"
       ? new LocalStorage()
-      : process.env.RECORD_STORE === "postgres" &&
-          process.env.RECORD_STORE_ACTIVE === "yes"
+      : process.env.RECORD_STORE === "postgres"
         ? new HybridStorage(new PostgresRecords())
         : new GraphStorage());
 }
