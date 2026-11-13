@@ -59,10 +59,13 @@ export class PostgresRecords {
       return await this.pool.query<R>(text, values);
     } catch (e) {
       if (e instanceof AppError) throw e;
-      throw new AppError(
-        503,
-        "The database is unavailable. Your last saved work is safe; retry shortly.",
-        "DATABASE_UNAVAILABLE",
+      throw Object.assign(
+        new AppError(
+          503,
+          "The database is unavailable. Your last saved work is safe; retry shortly.",
+          "DATABASE_UNAVAILABLE",
+        ),
+        { cause: { code: (e as { code?: string })?.code } },
       );
     } finally {
       if (m) {
@@ -88,8 +91,15 @@ export class PostgresRecords {
       await this.pool.query(
         "ALTER TABLE app_records ENABLE ROW LEVEL SECURITY",
       );
-    } catch {
+    } catch (e) {
       this.ready = undefined;
+      console.error(
+        JSON.stringify({
+          event: "database_unavailable",
+          code: (e as { code?: string })?.code,
+          at: new Date().toISOString(),
+        }),
+      );
       throw new AppError(
         503,
         "The database is unavailable. Your last saved work is safe; retry shortly.",
