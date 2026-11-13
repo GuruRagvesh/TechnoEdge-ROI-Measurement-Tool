@@ -62,14 +62,15 @@ export function validateConfig() {
       "EMAIL_FROM",
       "IDENTITY_PEPPER",
     ].forEach(required);
+    const recordStore = process.env.RECORD_STORE;
+    if (recordStore && recordStore !== "graph" && recordStore !== "postgres")
+      throw new Error("RECORD_STORE must be graph or postgres");
     if (
-      process.env.RECORD_STORE === "postgres" &&
+      recordStore === "postgres" &&
       !process.env.DATABASE_URL &&
       !process.env.POSTGRES_URL
     )
       throw new Error("Missing server configuration: DATABASE_URL");
-    else if (process.env.RECORD_STORE && process.env.RECORD_STORE !== "graph")
-      throw new Error("RECORD_STORE must be graph or postgres");
     if (process.env.MAIL_PROVIDER === "resend") required("RESEND_API_KEY");
     else if (process.env.MAIL_PROVIDER === "smtp")
       ["SMTP_HOST", "SMTP_USER", "SMTP_PASSWORD"].forEach(required);
