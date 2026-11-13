@@ -356,6 +356,39 @@ describe("live infrastructure contracts without live credentials", () => {
     vi.stubEnv("GRAPH_LAYOUT", "cohorts-v1");
     expect(() => validateConfig()).not.toThrow();
   });
+  it("accepts a production PostgreSQL record store only with a database address", () => {
+    const prod = {
+      NODE_ENV: "production",
+      STORAGE_ADAPTER: "graph",
+      APP_URL: "https://assessment.example",
+      GRAPH_TENANT_ID: "t",
+      GRAPH_CLIENT_ID: "c",
+      GRAPH_CLIENT_SECRET: "s",
+      GRAPH_DRIVE_ID: "d",
+      GRAPH_SITE_ID: "site",
+      GRAPH_SITE_URL: "https://tenant.sharepoint.com/sites/Assessment",
+      GRAPH_STORAGE_ROOT: "Assessment/Production",
+      GRAPH_LAYOUT: "cohorts-v1",
+      EMAIL_FROM: "a@assessment.example",
+      IDENTITY_PEPPER: "p".repeat(40),
+      MAIL_PROVIDER: "resend",
+      RESEND_API_KEY: "re_x",
+      LOCAL_TEST_ACCOUNTS: "false",
+      MOCK_AUTH: "false",
+      DATABASE_URL: "",
+      POSTGRES_URL: "",
+    };
+    for (const [k, v] of Object.entries(prod)) vi.stubEnv(k, v);
+    expect(() => validateConfig()).not.toThrow();
+    vi.stubEnv("RECORD_STORE", "postgres");
+    expect(() => validateConfig()).toThrow("Missing server configuration: DATABASE_URL");
+    vi.stubEnv("POSTGRES_URL", "postgres://u:p@db.example:6543/postgres");
+    expect(() => validateConfig()).not.toThrow();
+    vi.stubEnv("RECORD_STORE", "graph");
+    expect(() => validateConfig()).not.toThrow();
+    vi.stubEnv("RECORD_STORE", "mysql");
+    expect(() => validateConfig()).toThrow("RECORD_STORE must be graph or postgres");
+  });
   it("uses the configurable 25 MiB evidence limit on Vercel and locally", () => {
     vi.stubEnv("VERCEL", "1");
     expect(evidenceLimitMB()).toBe(25);
