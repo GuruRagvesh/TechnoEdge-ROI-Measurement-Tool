@@ -1,6 +1,7 @@
 import { Pool, type PoolConfig } from "pg";
 import { AppError } from "./types";
 import { graphMetrics } from "./request-metrics";
+import { SUPABASE_ROOT_CA } from "./supabase-ca";
 
 // Live application records (sign-in, sessions, rooms, participants, autosave)
 // kept in PostgreSQL. Each record is the same JSON document the app would
@@ -29,12 +30,33 @@ export function databaseUrl() {
   return url.toString();
 }
 
+// A Supabase host is verified against Supabase's own root certificate, with
+// full hostname checking. sslmode is removed from the URL because the driver
+// would otherwise replace these TLS settings with its own.
+export function connectionConfig(connectionString: string): PoolConfig {
+  if (!connectionString || process.env.DATABASE_SSL === "no-verify")
+    return { connectionString };
+  let url: URL;
+  try {
+    url = new URL(connectionString);
+  } catch {
+    return { connectionString };
+  }
+  if (!url.hostname.endsWith(".supabase.com") && !url.hostname.endsWith(".supabase.co"))
+    return { connectionString };
+  url.searchParams.delete("sslmode");
+  return {
+    connectionString: url.toString(),
+    ssl: { ca: SUPABASE_ROOT_CA, rejectUnauthorized: true },
+  };
+}
+
 export class PostgresRecords {
   private pool: Pool;
   private ready?: Promise<void>;
   constructor(config: string | PoolConfig = databaseUrl()) {
     const base: PoolConfig =
-      typeof config === "string" ? { connectionString: config } : config;
+      typeof config === "string" ? connectionConfig(config) : config;
     if (!base.connectionString && !base.host)
       throw new Error(
         "DATABASE_URL (or POSTGRES_URL) is required when RECORD_STORE=postgres",

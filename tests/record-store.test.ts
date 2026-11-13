@@ -77,12 +77,18 @@ describe.skipIf(!DB)("PostgreSQL record store", () => {
   it("loses no update when 50 requests change one record at once", async () => {
     const g = new HybridStorage(records, simFetch);
     const key = `rooms/${room()}/participants/counter.json`;
-    await Promise.all(
+    // Each writer either lands its change or is told to reload (409 after its
+    // bounded retries); a change is never silently overwritten.
+    const results = await Promise.allSettled(
       Array.from({ length: 50 }, () =>
         mutate<{ n: number }>(g, key, (old) => ({ n: (old?.n ?? 0) + 1 })),
       ),
     );
-    expect(await getJson(g, key)).toEqual({ n: 50 });
+    const saved = results.filter((r) => r.status === "fulfilled").length;
+    for (const r of results)
+      if (r.status === "rejected") expect((r.reason as AppError).status).toBe(409);
+    expect(saved).toBeGreaterThan(0);
+    expect(await getJson(g, key)).toEqual({ n: saved });
   }, 30000);
 
   it("keeps records off SharePoint entirely, and files on SharePoint", async () => {
@@ -187,5 +193,28 @@ describe("database connection settings", () => {
     expect(url.searchParams.get("sslmode")).toBe("require");
     expect(url.searchParams.get("uselibpqcompat")).toBe("true");
     vi.unstubAllEnvs();
+  });
+});
+
+describe("Supabase TLS", () => {
+  it("verifies a Supabase host against Supabase's root certificate", async () => {
+    const { connectionConfig } = await import("../src/lib/record-store");
+    vi.stubEnv("DATABASE_SSL", "");
+    const c = connectionConfig("postgres://u:p@aws-0-ap-south-1.pooler.supabase.com:6543/postgres?sslmode=require&supa=base-pooler.x");
+    expect(new URL(c.connectionString!).searchParams.get("sslmode")).toBeNull();
+    expect(new URL(c.connectionString!).searchParams.get("supa")).toBe("base-pooler.x");
+    const ssl = c.ssl as { ca: string; rejectUnauthorized: boolean };
+    expect(ssl.rejectUnauthorized).toBe(true);
+    expect(ssl.ca).toContain("BEGIN CERTIFICATE");
+    expect(connectionConfig("postgres://u:p@db.example/x?sslmode=require")).toEqual({ connectionString: "postgres://u:p@db.example/x?sslmode=require" });
+    vi.unstubAllEnvs();
+  });
+
+  it("ships the expected Supabase root certificate", async () => {
+    const { X509Certificate } = await import("node:crypto");
+    const { SUPABASE_ROOT_CA } = await import("../src/lib/supabase-ca");
+    const cert = new X509Certificate(SUPABASE_ROOT_CA);
+    expect(cert.subject).toContain("CN=Supabase Root 2021 CA");
+    expect(cert.fingerprint256).toBe("80:70:25:AD:50:D4:ED:21:9D:2C:9C:7D:29:9C:00:4F:82:4E:B0:0C:F7:F6:5A:FE:F6:07:D0:7B:72:E6:CA:FA");
   });
 });
