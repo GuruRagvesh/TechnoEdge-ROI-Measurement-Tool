@@ -1,7 +1,10 @@
 # Single-round release (11 Nov 2026)
 
-Status: **code complete and verified locally. NOT LIVE.** No hosted deployment, SharePoint
-connection or real OTP email has been verified yet.
+Status update, 13 November 2026: **live in Production.** The deployment, SharePoint
+connection, email-code attendee login and PostgreSQL health have been verified.
+Production Host login remains pending because neither currently allowlisted mailbox is
+available to the operator. See the
+[current production status and provider approval](PRODUCTION_STATUS_2026-11-13.md).
 
 ## What changed
 
@@ -44,7 +47,10 @@ Production settings live in Vercel (Production environment). Non-secret values m
 The host allowlist lives at
 `Assessment Records/TechnoEdgeAssessmentROI/Production/config/host-allowlist.json`.
 
-## Go-live steps (all need account owners)
+## Original go-live steps
+
+This list is retained as the release record. Current completion and open gates are in
+the production status linked above.
 
 1. Push this branch; let GitHub Actions run.
 2. Microsoft 365: confirm the assessment site and `Assessment Records` library; confirm the

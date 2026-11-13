@@ -1,6 +1,10 @@
 # Final administrator checklist
 
-6 November 2026. **Review only: no provisioning, real email activation or deployment is authorized.** Every unchecked item needs manual approval/configuration or live verification.
+This checklist was prepared on 6 November 2026 before provisioning. Production was
+subsequently deployed and PostgreSQL was activated. Use the
+[current production status and provider approval](PRODUCTION_STATUS_2026-11-13.md)
+for the verified state as of 13 November 2026. Unchecked items below remain useful as
+acceptance evidence but statements that nothing is provisioned or live are historical.
 
 ## Microsoft 365 administrator
 
