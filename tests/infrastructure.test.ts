@@ -375,8 +375,10 @@ describe("live infrastructure contracts without live credentials", () => {
       RESEND_API_KEY: "re_x",
       LOCAL_TEST_ACCOUNTS: "false",
       MOCK_AUTH: "false",
+      RECORD_STORE: "",
       DATABASE_URL: "",
       POSTGRES_URL: "",
+      DATABASE_SSL: "",
     };
     for (const [k, v] of Object.entries(prod)) vi.stubEnv(k, v);
     expect(() => validateConfig()).not.toThrow();
