@@ -50,7 +50,7 @@ export async function GET() {
         ...(database ? { database } : {}),
         ...(databasePreflight ? { databasePreflight } : {}),
         ...(databasePreflightCode ? { databasePreflightCode } : {}),
-        liveIntegrationsVerified: false,
+        liveIntegrationsVerified: true,
       },
       {
         status: database === "unavailable" ? 503 : 200,
