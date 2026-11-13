@@ -100,10 +100,13 @@ export class PostgresRecords {
           at: new Date().toISOString(),
         }),
       );
-      throw new AppError(
-        503,
-        "The database is unavailable. Your last saved work is safe; retry shortly.",
-        "DATABASE_UNAVAILABLE",
+      throw Object.assign(
+        new AppError(
+          503,
+          "The database is unavailable. Your last saved work is safe; retry shortly.",
+          "DATABASE_UNAVAILABLE",
+        ),
+        { cause: { code: (e as { code?: string })?.code } },
       );
     }
   }
