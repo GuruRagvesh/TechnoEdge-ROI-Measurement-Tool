@@ -1,5 +1,6 @@
 import { validateConfig } from "@/lib/config";
 import { HybridStorage, storage } from "@/lib/storage";
+import { PostgresRecords } from "@/lib/record-store";
 export const dynamic = "force-dynamic";
 export async function GET() {
   try {
@@ -13,12 +14,42 @@ export async function GET() {
         () => "ok" as const,
         () => "unavailable" as const,
       );
+    // Configured but not yet active: check the database can be reached before
+    // any traffic is switched to it.
+    let databasePreflight: "ok" | "unavailable" | undefined;
+    let databasePreflightCode: string | undefined;
+    if (!database && process.env.RECORD_STORE === "postgres") {
+      const probe = new PostgresRecords();
+      databasePreflight = await probe.ping().then(
+        () => "ok" as const,
+        (e) => {
+          // An error code only (for example a TLS or authentication code),
+          // never a host, user or message.
+          const code = (e as { cause?: { code?: string } })?.cause?.code;
+          databasePreflightCode =
+            typeof code === "string" && /^[A-Z0-9_]{2,40}$/.test(code)
+              ? code
+              : "UNKNOWN";
+          console.error(
+            JSON.stringify({
+              event: "database_preflight_failed",
+              cause: (e as { cause?: { code?: string } })?.cause?.code,
+              at: new Date().toISOString(),
+            }),
+          );
+          return "unavailable" as const;
+        },
+      );
+      await probe.end().catch(() => {});
+    }
     return Response.json(
       {
         status: database === "unavailable" ? "degraded" : "ok",
         checks: database ? "configuration-and-database" : "runtime-configuration-only",
         recordStore: database ? "postgres" : "sharepoint",
         ...(database ? { database } : {}),
+        ...(databasePreflight ? { databasePreflight } : {}),
+        ...(databasePreflightCode ? { databasePreflightCode } : {}),
         liveIntegrationsVerified: false,
       },
       {
