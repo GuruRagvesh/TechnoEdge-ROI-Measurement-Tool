@@ -15,7 +15,7 @@ const csv = (rows: Record<string, unknown>[]) =>
 export async function materials(
   task: TaskId,
   phase: Phase,
-  version: ScoringVersion = "corporate-60-v1",
+  version: ScoringVersion = "corporate-all5-v2",
   single = false,
 ) {
   const d = dataset(phase),
@@ -23,7 +23,7 @@ export async function materials(
     meta = catalogue[task];
   zip.file(
     "READ_ME.txt",
-    `${meta.title}${single ? "" : " | " + phase.toUpperCase()}\n\n${meta.brief}\n\nDeliverables\n${meta.deliverables.join("\n")}\n\nScoring version: ${version}\n${version === "corporate-60-v1" ? "20 marks per task: 4 MCQs x 3 = 12; practical completeness /3, accuracy /3, presentation /2 = 8." : "Historical model: practical accuracy, quality and completeness each /5; final score 40% MCQ and 60% practical."}\n${meta.rubric.join("\n")}\n\nTime budget: shared server timer from confirmed room join, including task selection. Complete three tasks. ${single ? "One attempt per participant." : "Summit inherits your Base Camp categories. Pre-AI: work without generative AI. Post-AI: AI tools permitted; document your method."} All values are synthetic.\n`,
+    `${meta.title}${single ? "" : " | " + phase.toUpperCase()}\n\n${meta.brief}\n\nDeliverables\n${meta.deliverables.join("\n")}\n\nScoring version: ${version}\n${version !== "legacy-100" ? "20 marks per task: 4 MCQs x 3 = 12; practical completeness /3, accuracy /3, presentation /2 = 8." : "Historical model: practical accuracy, quality and completeness each /5; final score 40% MCQ and 60% practical."}\n${meta.rubric.join("\n")}\n\nTime budget: shared server timer from confirmed room join. Complete all five tasks. ${single ? "One attempt per participant." : "Summit repeats the same five categories. Pre-AI: work without generative AI. Post-AI: AI tools permitted; document your method."} All values are synthetic.\n`,
   );
   if (task === "inbox") {
     zip.file("inbox.csv", csv(d.emails));

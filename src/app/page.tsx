@@ -17,9 +17,9 @@ export default function Home() {
         <span className="eyebrow">TECHNOEDGE LEARNING SERVICES</span>
         <h1>AI Productivity Assessment</h1>
         <p>
-          One timed, practical assessment for working professionals. You choose
-          three of five business challenges, work on the supplied files in your
-          own tools, and upload what you produce.
+          One timed, practical assessment for working professionals. You
+          complete all five business challenges, work on the supplied files in
+          your own tools, and upload what you produce.
         </p>
         <Link className="button primary" href="/login">
           Sign in / Get started →
@@ -33,7 +33,7 @@ export default function Home() {
             </p>
           </article>
           <article className="panel">
-            <h2>Three of five challenges</h2>
+            <h2>All five challenges</h2>
             <p>
               Email analysis, Excel consolidation, data cleaning, an Excel
               dashboard, or a Word-to-PowerPoint management review.

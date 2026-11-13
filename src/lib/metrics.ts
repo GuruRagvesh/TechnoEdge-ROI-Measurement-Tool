@@ -1,19 +1,25 @@
 import type { Participant, Grade } from "./types";
 export function metrics(p: Participant) {
-  const corporate = p.scoringVersion === "corporate-60-v1";
+  const corporate =
+    p.scoringVersion === "corporate-60-v1" ||
+    p.scoringVersion === "corporate-all5-v2";
+  const challengeCount = p.selected.length;
   const mcq = p.selected.reduce((n, id) => n + (p.mcq[id] || 0), 0),
     graded = p.selected.map((id) => p.grades[id]).filter(Boolean) as Grade[];
   const practical = graded.reduce(
       (s, g) => s + g.quality + g.accuracy + g.completeness,
       0,
     ),
-    fullyGraded = p.selected.length === 3 && graded.length === 3;
+    fullyGraded = challengeCount > 0 && graded.length === challengeCount;
   return {
     scoringVersion: p.scoringVersion || "legacy-100",
-    maximum: corporate ? 60 : 100,
+    maximum: corporate ? challengeCount * 20 : 100,
     mcqMarks: corporate ? mcq * 3 : mcq,
     mcq,
-    accuracy: p.submittedAt ? (mcq / 12) * 100 : null,
+    accuracy:
+      p.submittedAt && challengeCount
+        ? (mcq / (challengeCount * 4)) * 100
+        : null,
     quality: graded.length
       ? (graded.reduce((n, g) => n + g.quality, 0) / graded.length) *
         (corporate ? 50 : 20)
@@ -24,7 +30,10 @@ export function metrics(p: Participant) {
       p.submittedAt && fullyGraded
         ? corporate
           ? mcq * 3 + practical
-          : Math.round((mcq / 12) * 40 + (practical / 45) * 60)
+          : Math.round(
+              (mcq / (challengeCount * 4)) * 40 +
+                (practical / (challengeCount * 15)) * 60,
+            )
         : null,
     completed: Object.keys(p.taskCompletedAt).length,
     minutes:
@@ -33,7 +42,7 @@ export function metrics(p: Participant) {
         : null,
   };
 }
-// Pre/Post rule: same person, same scoring model, same three challenges,
+// Pre/Post rule: same person, same scoring model, same assigned challenges,
 // both submitted, completed and fully evaluated.
 export function comparison(pre: Participant, post: Participant) {
   const a = metrics(pre),
@@ -44,10 +53,11 @@ export function comparison(pre: Participant, post: Participant) {
     pre.identity.id === post.identity.id &&
     !!pre.submittedAt &&
     !!post.submittedAt &&
-    pre.selected.length === 3 &&
+    pre.selected.length > 0 &&
+    pre.selected.length === post.selected.length &&
     pre.selected.every((t) => post.selected.includes(t)) &&
-    a.completed === 3 &&
-    b.completed === 3 &&
+    a.completed === pre.selected.length &&
+    b.completed === post.selected.length &&
     a.fullyGraded &&
     b.fullyGraded;
   const minutesSaved =

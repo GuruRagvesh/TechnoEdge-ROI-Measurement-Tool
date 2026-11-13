@@ -82,7 +82,7 @@ export function PrimaryMetrics(props: {
           )
         }
         detail={props.scoreDetail}
-        definition={`MCQ marks (3 per correct answer, max 36) + practical evaluation (max 24). Shown once all three challenges are evaluated.`}
+        definition={`MCQ marks (3 per correct answer) + practical evaluation (8 per challenge). Shown once every assigned challenge is evaluated.`}
       />
       <Tile
         label="Challenges attempted"
@@ -98,7 +98,7 @@ export function PrimaryMetrics(props: {
           )
         }
         detail={props.attemptedDetail}
-        definition="Challenges selected out of the five available. Every participant chooses three."
+        definition="All five challenges are assigned automatically to every participant."
       />
       <Tile
         label="Time taken"
@@ -133,7 +133,7 @@ export function PrePostPanel({
   pre,
   post,
   improvement,
-  maximum = 60,
+  maximum = 100,
   detail,
 }: {
   pre: number | null;
@@ -262,10 +262,10 @@ export function Definitions() {
       <summary>How these figures are calculated</summary>
       <ul>
         <li>
-          <b>Current score /60</b>: MCQ marks (3 per correct answer, 12
-          questions, max 36) plus practical evaluation (completeness 3,
-          accuracy 3, presentation 2 per challenge, max 24). Shown only when
-          all three challenges are evaluated.
+          <b>Current score</b>: MCQ marks (3 per correct answer) plus practical
+          evaluation (completeness 3, accuracy 3, presentation 2 per challenge).
+          The five-challenge assessment is scored out of 100 and is shown only
+          when every challenge is evaluated.
         </li>
         <li>
           <b>MCQ accuracy</b>: correct MCQ answers ÷ MCQs answered. It does not
@@ -276,13 +276,14 @@ export function Definitions() {
           from server timestamps.
         </li>
         <li>
-          <b>Completion</b>: selected challenges marked complete ÷ 3.
+          <b>Completion</b>: assigned challenges marked complete ÷ all assigned
+          challenges.
           <b> Evidence</b>: challenges with a file the server verified.
         </li>
         <li>
           <b>Pre-Test / Post-Test</b>: only when the same participant completed
-          both linked assessments with the same three challenges and both were
-          evaluated. Otherwise &ldquo;Not available&rdquo;.
+          both linked assessments with the same assigned challenges and both
+          were evaluated. Otherwise &ldquo;Not available&rdquo;.
         </li>
         <li>
           All figures come from saved assessment records and match the Excel
@@ -333,7 +334,13 @@ export function ChallengeResults({
               {rows.map((r) => (
                 <tr key={r.task}>
                   <td>{r.label}</td>
-                  <td>{r.mcqMarks === null ? (submitted ? "—" : "After submission") : r.mcqMarks}</td>
+                  <td>
+                    {r.mcqMarks === null
+                      ? submitted
+                        ? "—"
+                        : "After submission"
+                      : r.mcqMarks}
+                  </td>
                   <td>
                     {r.practical === null
                       ? submitted
@@ -349,7 +356,9 @@ export function ChallengeResults({
                       <span className="sc-miss">No file received</span>
                     )}
                   </td>
-                  <td>{r.completed ? <span className="sc-ok">✓ Yes</span> : "No"}</td>
+                  <td>
+                    {r.completed ? <span className="sc-ok">✓ Yes</span> : "No"}
+                  </td>
                 </tr>
               ))}
             </tbody>
@@ -378,7 +387,9 @@ export function ChallengeAverages({
   return (
     <section className="panel sc-table-panel" aria-labelledby="ca-title">
       <h2 id="ca-title">Challenge-wise performance</h2>
-      <p className="help">Submitted attempts; averages use evaluated challenges only.</p>
+      <p className="help">
+        Submitted attempts; averages use evaluated challenges only.
+      </p>
       <div className="sc-table-wrap">
         <table className="sc-table">
           <thead>
@@ -404,9 +415,7 @@ export function ChallengeAverages({
                     <small> · {r.attempts - r.evaluated} pending</small>
                   )}
                 </td>
-                <td>
-                  {r.attempts ? `${r.evidence} of ${r.attempts}` : "—"}
-                </td>
+                <td>{r.attempts ? `${r.evidence} of ${r.attempts}` : "—"}</td>
               </tr>
             ))}
           </tbody>

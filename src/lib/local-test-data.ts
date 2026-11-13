@@ -179,7 +179,7 @@ async function fixture(
     for (const task of selected)
       grades[task] = {
         accuracy:
-          room.scoringVersion === "corporate-60-v1"
+          room.scoringVersion !== "legacy-100"
             ? room.phase === "pre"
               ? 2
               : 3
@@ -187,7 +187,7 @@ async function fixture(
               ? 4
               : 5,
         quality:
-          room.scoringVersion === "corporate-60-v1"
+          room.scoringVersion !== "legacy-100"
             ? room.phase === "pre"
               ? 1
               : 2
@@ -195,7 +195,7 @@ async function fixture(
               ? 3 + (offset % 2)
               : 4 + (offset % 2),
         completeness:
-          room.scoringVersion === "corporate-60-v1"
+          room.scoringVersion !== "legacy-100"
             ? room.phase === "pre"
               ? 2
               : 3

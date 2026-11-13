@@ -52,7 +52,6 @@ export default function Assessment({
   const { id } = use(params),
     { identity, error: authError } = useIdentity("attendee");
   const [detail, setDetail] = useState<Detail | null>(null),
-    [selected, setSelected] = useState<TaskId[]>([]),
     [active, setActive] = useState<TaskId>("inbox"),
     [draft, setDraft] = useState<Draft>({
       answers: {},
@@ -87,7 +86,6 @@ export default function Assessment({
     setDetail(d);
     participantRef.current = d.participant;
     offset.current = Date.parse(d.serverTime) - Date.now();
-    setSelected(d.preSelected || d.participant.selected);
     if (d.participant.selected[0]) setActive(d.participant.selected[0]);
     const initial = {
       answers: d.participant.answers,
@@ -235,13 +233,15 @@ export default function Assessment({
     setBusy(true);
     setError("");
     try {
-      await api(base + "/start", { selected });
+      await api(base + "/start", {
+        selected: detail?.tasks.map((task) => task.id) || [],
+      });
       install(await api<Detail>(base));
     } catch (e) {
-      // The selection may have been saved even if a reply was lost or slow:
-      // re-read the server record and continue if it holds three challenges.
+      // The assignment may have been saved even if a reply was lost or slow:
+      // re-read the server record and continue if it holds the challenges.
       const saved = await api<Detail>(base).catch(() => null);
-      if (saved && saved.participant.selected.length === 3) install(saved);
+      if (saved && saved.participant.selected.length > 0) install(saved);
       else setError((e as Error).message);
     } finally {
       setBusy(false);
@@ -332,7 +332,7 @@ export default function Assessment({
   const locked = remaining === 0 || !!p.submittedAt;
   const mcq = Object.values(p.mcq).reduce((a, b) => a + (b || 0), 0),
     grades = Object.values(p.grades),
-    fullyGraded = grades.length === 3,
+    fullyGraded = p.selected.length > 0 && grades.length === p.selected.length,
     practical = grades.reduce(
       (n, g) => n + g.accuracy + g.quality + g.completeness,
       0,
@@ -354,10 +354,7 @@ export default function Assessment({
           <h1>{room.name}</h1>
           <p>
             {room.batch} <span>·</span> {room.durationMinutes} minutes{" "}
-            <span>·</span>{" "}
-            {room.phase === "post"
-              ? "Your three matched challenges"
-              : "Complete any 3 challenges"}
+            <span>·</span> All 5 challenges required
           </p>
         </div>
         {room.mode !== "single" && (
@@ -405,12 +402,12 @@ export default function Assessment({
             <div className="stats-grid">
               <Stat
                 label="MCQ score"
-                value={`${metrics(p).mcqMarks} / ${p.scoringVersion === "corporate-60-v1" ? 36 : 12}`}
+                value={`${metrics(p).mcqMarks} / ${p.selected.length * (p.scoringVersion === "legacy-100" ? 4 : 12)}`}
                 detail="Automatically marked"
               />
               <Stat
                 label="MCQ accuracy"
-                value={format((mcq / 12) * 100, "%")}
+                value={format((mcq / (p.selected.length * 4)) * 100, "%")}
               />
               <Stat
                 label="Elapsed time"
@@ -428,8 +425,8 @@ export default function Assessment({
                     : "Pending"
                 }
                 detail={
-                  p.scoringVersion === "corporate-60-v1"
-                    ? "36 MCQ + 24 practical marks"
+                  p.scoringVersion !== "legacy-100"
+                    ? `${p.selected.length * 12} MCQ + ${p.selected.length * 8} practical marks`
                     : "Historical model: 40% MCQ + 60% practical"
                 }
               />
@@ -442,12 +439,9 @@ export default function Assessment({
                     <tr>
                       <th>Challenge</th>
                       <th>Completion</th>
+                      <th>MCQ /{p.scoringVersion !== "legacy-100" ? 12 : 4}</th>
                       <th>
-                        MCQ /{p.scoringVersion === "corporate-60-v1" ? 12 : 4}
-                      </th>
-                      <th>
-                        Practical /
-                        {p.scoringVersion === "corporate-60-v1" ? 8 : 15}
+                        Practical /{p.scoringVersion !== "legacy-100" ? 8 : 15}
                       </th>
                       <th>Evaluator feedback</th>
                     </tr>
@@ -465,7 +459,7 @@ export default function Assessment({
                         </td>
                         <td>
                           {(p.mcq[t] ?? 0) *
-                            (p.scoringVersion === "corporate-60-v1" ? 3 : 1)}
+                            (p.scoringVersion !== "legacy-100" ? 3 : 1)}
                         </td>
                         <td>
                           {p.grades[t]
@@ -484,34 +478,29 @@ export default function Assessment({
                 </table>
               </div>
               <p className="help">
-                {p.scoringVersion === "corporate-60-v1"
+                {p.scoringVersion !== "legacy-100"
                   ? "Practical rubric: completeness /3, accuracy /3, presentation /2."
                   : "Historical rubric: accuracy, quality and completeness each /5."}{" "}
-                A final score is released after all three evaluations.
+                A final score is released after every challenge is evaluated.
               </p>
             </section>
             <Link className="button primary" href="/attendee">
               Back to your dashboard <ArrowRight size={16} />
             </Link>
           </>
-        ) : p.selected.length !== 3 ? (
+        ) : p.selected.length === 0 ? (
           <>
             <section className="intro-panel">
               <div className="intro-icon">
                 <ShieldCheck size={28} />
               </div>
               <div>
-                <h2>
-                  {room.phase === "post"
-                    ? "The same skills. A different dataset."
-                    : "Choose your three challenges."}
-                </h2>
+                <h2>All five challenges are assigned automatically.</h2>
                 <p>
-                  {room.phase === "post"
-                    ? "Your Pre-AI categories are selected automatically for a fair comparison."
-                    : "Each challenge stands on its own. Choose three that reflect your everyday work."}{" "}
-                  Your timer started at confirmed join. You can reload and
-                  resume; elapsed time keeps running.
+                  Every participant completes the same five challenges. No
+                  challenge selection is required. Your timer started at
+                  confirmed join. You can reload and resume; elapsed time keeps
+                  running.
                 </p>
                 <strong>
                   {room.mode === "single"
@@ -524,51 +513,33 @@ export default function Assessment({
             </section>
             <div className="challenge-grid">
               {tasks.map((t, i) => (
-                <button
-                  key={t.id}
-                  className={
-                    "challenge-card " +
-                    (selected.includes(t.id) ? "selected" : "")
-                  }
-                  aria-pressed={selected.includes(t.id)}
-                  disabled={
-                    room.phase === "post" ||
-                    (!selected.includes(t.id) && selected.length === 3)
-                  }
-                  onClick={() =>
-                    setSelected((v) =>
-                      v.includes(t.id)
-                        ? v.filter((x) => x !== t.id)
-                        : [...v, t.id],
-                    )
-                  }
-                >
+                <article key={t.id} className="challenge-card selected">
                   <div className="challenge-top">
                     <span className={"task-number tone-" + i}>0{i + 1}</span>
                     <span className="check-circle">
-                      {selected.includes(t.id) && <Check size={14} />}
+                      <Check size={14} />
                     </span>
                   </div>
                   <span className="eyebrow">{t.tool}</span>
                   <h3>{t.title}</h3>
                   <p>{t.subtitle}</p>
                   <small>4 result questions · Evidence upload</small>
-                </button>
+                </article>
               ))}
             </div>
             <div className="start-bar">
               <div>
-                <strong>{selected.length} of 3 challenges selected</strong>
-                <p>Selections lock when you begin. Make sure you’re ready.</p>
+                <strong>All 5 challenges assigned</strong>
+                <p>
+                  The same complete assessment applies to every participant.
+                </p>
               </div>
               <button
                 className="button primary"
-                disabled={
-                  selected.length !== 3 || busy || locked || room.closed
-                }
+                disabled={busy || locked || room.closed}
                 onClick={() => void start()}
               >
-                Confirm selected challenges <ArrowRight size={18} />
+                Begin all five challenges <ArrowRight size={18} />
               </button>
             </div>
           </>
@@ -625,8 +596,8 @@ export default function Assessment({
                     <h3>Result-based questions</h3>
                   </div>
                   <span className="pill">
-                    4 questions ·{" "}
-                    {p.scoringVersion === "corporate-60-v1" ? 12 : 4} marks
+                    4 questions · {p.scoringVersion !== "legacy-100" ? 12 : 4}{" "}
+                    marks
                   </span>
                 </div>
                 <fieldset disabled={locked || busy} className="questions">
@@ -828,11 +799,14 @@ export default function Assessment({
                 ))}
                 <div className="progress-track">
                   <i
-                    style={{ width: `${(draft.completed.length / 3) * 100}%` }}
+                    style={{
+                      width: `${(draft.completed.length / p.selected.length) * 100}%`,
+                    }}
                   />
                 </div>
                 <p className="help">
-                  {draft.completed.length} of 3 challenges complete
+                  {draft.completed.length} of {p.selected.length} challenges
+                  complete
                 </p>
                 <div className="save-status" role="status">
                   <Save size={14} />
@@ -870,7 +844,11 @@ export default function Assessment({
                 )}
                 <button
                   className="button primary full"
-                  disabled={busy || locked || draft.completed.length !== 3}
+                  disabled={
+                    busy ||
+                    locked ||
+                    draft.completed.length !== p.selected.length
+                  }
                   onClick={async () => {
                     setBusy(true);
                     try {
@@ -933,8 +911,8 @@ export default function Assessment({
               {String(seconds).padStart(2, "0")} remaining
             </p>
             <p>
-              <strong>{p.selected.length} of 5</strong> challenges selected
-              {p.selected.length === 3 ? " ✓" : " (3 required)"}
+              <strong>{p.selected.length} of 5</strong> challenges assigned
+              {p.selected.length === 5 ? " ✓" : ""}
             </p>
             <ul className="review-list">
               {p.selected.map((t) => {
@@ -999,9 +977,9 @@ export default function Assessment({
                   )}
                   {incomplete.length > 0 && (
                     <p className="error">
-                      To submit, every selected challenge needs 4 saved answers,
-                      evidence and the &ldquo;Mark this challenge
-                      complete&rdquo; box ticked.
+                      To submit, every challenge needs 4 saved answers, evidence
+                      and the &ldquo;Mark this challenge complete&rdquo; box
+                      ticked.
                     </p>
                   )}
                   {locked && !p.submittedAt && (
@@ -1037,7 +1015,7 @@ export default function Assessment({
                   locked ||
                   dirty ||
                   status !== "All changes saved" ||
-                  p.selected.length !== 3 ||
+                  p.selected.length === 0 ||
                   p.selected.some((t) => !p.taskCompletedAt[t])
                 }
                 onClick={() => void submit()}

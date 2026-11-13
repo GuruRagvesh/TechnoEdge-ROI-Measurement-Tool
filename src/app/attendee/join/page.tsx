@@ -105,11 +105,7 @@ export default function Join() {
                 {room.durationMinutes} minutes. The server clock starts on
                 confirmation and continues across reloads and disconnections.
               </li>
-              <li>
-                {room.phase === "pre"
-                  ? "Choose exactly three of five practical challenges. Selection time is included."
-                  : "Your three Base Camp categories are reused with different datasets."}
-              </li>
+              <li>All five practical challenges are assigned automatically.</li>
               {room.mode !== "single" && (
                 <li>
                   {room.phase === "pre"
@@ -123,8 +119,8 @@ export default function Join() {
                   : "Submission or expiry locks the attempt. You can resume an existing active attempt with its original deadline."}
               </li>
               <li>
-                {room.scoringVersion === "corporate-60-v1"
-                  ? "60 marks: 12 MCQ + 8 practical marks per task."
+                {room.scoringVersion !== "legacy-100"
+                  ? "100 marks: 12 MCQ + 8 practical marks per challenge."
                   : "Historical scoring model: 100 points."}
               </li>
             </ul>

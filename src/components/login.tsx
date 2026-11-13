@@ -132,7 +132,7 @@ export default function Home() {
             <em>Real progress.</em>
           </h1>
           <p>
-            A practical assessment of the way you work. Take on three real
+            A practical assessment of the way you work. Take on five real
             business challenges in one timed 60-minute session.
           </p>
           <div className="welcome-features">
@@ -142,7 +142,7 @@ export default function Home() {
             </span>
             <span>
               <Layers />
-              Choose 3 of 5
+              Complete all 5
             </span>
             <span>
               <Sparkles />

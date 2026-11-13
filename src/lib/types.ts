@@ -18,7 +18,8 @@ export type Identity = {
   email: string;
   role: "host" | "attendee";
 };
-export type ScoringVersion = "legacy-100" | "corporate-60-v1";
+export type ScoringVersion =
+  "legacy-100" | "corporate-60-v1" | "corporate-all5-v2";
 export type Program = {
   id: string;
   company: string;

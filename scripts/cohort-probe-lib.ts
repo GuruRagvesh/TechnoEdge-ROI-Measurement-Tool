@@ -3,7 +3,7 @@ import { AssessmentService, comparison, metrics } from "../src/lib/assessment";
 import { answerKey } from "../src/lib/challenges";
 import { excelReport, evidenceZip } from "../src/lib/reports";
 import type { Storage } from "../src/lib/storage";
-import type { Identity, TaskId } from "../src/lib/types";
+import { TASK_IDS, type Identity, type TaskId } from "../src/lib/types";
 export async function runCohortProbe(makeStore: () => Storage, count = 20) {
   if (!Number.isInteger(count) || count < 2 || count > 20)
     throw new Error("Probe supports 2–20 synthetic participants");
@@ -24,7 +24,7 @@ export async function runCohortProbe(makeStore: () => Storage, count = 20) {
     "Probe " + run,
     run,
   );
-  const selected: TaskId[] = ["inbox", "tables", "clean"];
+  const selected: TaskId[] = [...TASK_IDS];
   const people: Identity[] = Array.from({ length: count }, (_, i) => ({
     id: "probe-" + run + "-" + i,
     name: "Synthetic Participant " + (i + 1),
@@ -62,7 +62,7 @@ export async function runCohortProbe(makeStore: () => Storage, count = 20) {
         );
         if (
           recovered?.deadline !== joined.deadline ||
-          recovered.evidence.length !== 3
+          recovered.evidence.length !== selected.length
         )
           throw new Error("Restart readback failed");
         const [one, two] = await Promise.all([
@@ -85,7 +85,7 @@ export async function runCohortProbe(makeStore: () => Storage, count = 20) {
             },
             null,
           );
-        if (metrics(p).score !== 60) throw new Error("Unexpected final score");
+        if (metrics(p).score !== 100) throw new Error("Unexpected final score");
       }),
     );
   }
@@ -121,7 +121,7 @@ export async function runCohortProbe(makeStore: () => Storage, count = 20) {
     storageAdapter: store.constructor.name,
     participants: count,
     submittedAttempts: count * 2,
-    evidenceFiles: count * 6,
+    evidenceFiles: count * selected.length * 2,
     eligiblePairs: count,
     programId: program.id,
     reportBytes: report.length,

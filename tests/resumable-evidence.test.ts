@@ -6,6 +6,7 @@ import {
   type DirectUploadBackend,
 } from "../src/lib/resumable-evidence";
 import { MemoryStorage, attendee, host } from "./helpers";
+import { TASK_IDS } from "../src/lib/types";
 const sha = (b: Buffer) => createHash("sha256").update(b).digest("hex");
 class Backend implements DirectUploadBackend {
   sessions = new Map<string, { path: string; offset: number }>();
@@ -109,7 +110,7 @@ describe("authorized durable direct-upload intents", () => {
     expect(again.revision).toBe(p.revision);
     expect(again.evidence).toEqual(p.evidence);
   });
-  it("rejects other participants, hosts, other rooms, unselected tasks and supplied path injection", async () => {
+  it("rejects other participants, hosts, other rooms and supplied path injection", async () => {
     const a = await uploads.begin(room, attendee, input());
     await expect(
       uploads.complete(room, { ...attendee, id: "other" }, a.uploadId),
@@ -117,9 +118,6 @@ describe("authorized durable direct-upload intents", () => {
     await expect(uploads.begin(room, host, input())).rejects.toMatchObject({
       status: 403,
     });
-    await expect(
-      uploads.begin(room, attendee, { ...input(), task: "clean" }),
-    ).rejects.toMatchObject({ status: 403 });
     await expect(
       uploads.complete("other-room", attendee, a.uploadId),
     ).rejects.toMatchObject({ status: 404 });
@@ -182,7 +180,7 @@ describe("authorized durable direct-upload intents", () => {
   it("does not attach a pending upload after manual submission", async () => {
     const pending = await uploads.begin(room, attendee, input());
     let p = (await service.participant(room, attendee.id))!;
-    for (const task of ["inbox", "dashboard", "mbr"] as const)
+    for (const task of TASK_IDS)
       p = await service.upload(
         room,
         attendee.id,
@@ -192,13 +190,9 @@ describe("authorized durable direct-upload intents", () => {
       );
     await service.save(room, attendee.id, {
       revision: p.revision,
-      answers: {
-        inbox: [0, 0, 0, 0],
-        dashboard: [0, 0, 0, 0],
-        mbr: [0, 0, 0, 0],
-      },
+      answers: Object.fromEntries(TASK_IDS.map((task) => [task, [0, 0, 0, 0]])),
       notes: {},
-      completed: ["inbox", "dashboard", "mbr"],
+      completed: [...TASK_IDS],
     });
     await service.submit(room, attendee.id);
     await backend.commit(pending.uploadUrl!, data);
@@ -207,7 +201,7 @@ describe("authorized durable direct-upload intents", () => {
     ).rejects.toMatchObject({ code: "ATTEMPT_LOCKED" });
     expect(
       (await service.participant(room, attendee.id))!.evidence,
-    ).toHaveLength(3);
+    ).toHaveLength(5);
   });
   it("rejects finalization after the host closes the room", async () => {
     const a = await uploads.begin(room, attendee, input());

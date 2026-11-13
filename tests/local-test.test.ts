@@ -162,7 +162,7 @@ describe("local credential accounts and isolated ordinary workflows", () => {
     await service.join("ai-productivity-pre", pre.identity);
     await expect(
       service.submit("ai-productivity-pre", "DEMO001"),
-    ).rejects.toThrow("Complete all three");
+    ).rejects.toThrow("Complete all five");
     expect((await service.room("baseline-pre")).dataClassification).toBe(
       "synthetic-test",
     );

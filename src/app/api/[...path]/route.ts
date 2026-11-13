@@ -323,9 +323,13 @@ async function route(req: NextRequest) {
     let participant: Participant;
     if (action === "start") {
       const input = z
-        .object({ selected: z.array(task).length(3) })
+        .object({ selected: z.array(task).max(5).optional() })
         .parse(await body(req));
-      participant = await service.start(roomId, identity.id, input.selected);
+      participant = await service.start(
+        roomId,
+        identity.id,
+        input.selected || [],
+      );
     } else if (action === "save") {
       const input = z
         .object({
@@ -335,7 +339,7 @@ async function route(req: NextRequest) {
             z.array(z.number().int().min(-1).max(3)).max(4),
           ),
           notes: z.partialRecord(task, z.string().max(5000)),
-          completed: z.array(task).max(3),
+          completed: z.array(task).max(5),
         })
         .parse(await body(req));
       participant = await service.save(roomId, identity.id, input);

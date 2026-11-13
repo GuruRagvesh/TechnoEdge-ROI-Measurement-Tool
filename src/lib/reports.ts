@@ -41,14 +41,14 @@ export async function excelReport(
     ],
     [
       "Scoring",
-      room.scoringVersion === "corporate-60-v1"
-        ? "corporate-60-v1: 3 tasks × (12 MCQ + 8 practical) = 60 marks. Each MCQ awards 3 marks. Final score requires all 3 grades."
+      room.scoringVersion !== "legacy-100"
+        ? "corporate-all5-v2: 5 tasks × (12 MCQ + 8 practical) = 100 marks. Each MCQ awards 3 marks. Final score requires all 5 grades."
         : "legacy-100: MCQ 40% (12 questions), practical 60% (3 tasks × 15 points). Final score requires all 3 grades.",
     ],
     [
       "Practical rubric",
-      room.scoringVersion === "corporate-60-v1"
-        ? "Completeness /3, accuracy /3, presentation /2 per selected task."
+      room.scoringVersion !== "legacy-100"
+        ? "Completeness /3, accuracy /3, presentation /2 per assigned task."
         : "Accuracy, quality, completeness: each 0–5 per selected task.",
     ],
     [
@@ -87,7 +87,7 @@ export async function excelReport(
     "Completed tasks",
     "MCQ /12",
     "Accuracy %",
-    "Practical raw marks (24 or 45 maximum)",
+    "Practical raw marks (40 or 45 maximum)",
     "Quality %",
     "Final score (see scoring version)",
     "Fully graded",
@@ -205,11 +205,11 @@ export async function excelReport(
           q.correct + 1,
           q.options[q.correct],
           p.submittedAt && a === q.correct
-            ? p.scoringVersion === "corporate-60-v1"
+            ? p.scoringVersion !== "legacy-100"
               ? 3
               : 1
             : 0,
-          p.scoringVersion === "corporate-60-v1" ? 3 : 1,
+          p.scoringVersion !== "legacy-100" ? 3 : 1,
           p.scoringVersion || "legacy-100",
         ]);
       });
@@ -423,7 +423,9 @@ async function singleRoundReport(
     for (const id of p.selected) {
       const g = p.grades[id],
         files = p.evidence.filter((e) => e.task === id).length,
-        mcqMarks = p.submittedAt ? (p.mcq[id] || 0) * 3 : null,
+        mcqMarks = p.submittedAt
+          ? (p.mcq[id] || 0) * (p.scoringVersion === "legacy-100" ? 1 : 3)
+          : null,
         practical = g ? g.accuracy + g.quality + g.completeness : null;
       if (g && g.at > gradedAt) gradedAt = g.at;
       results.addRow([
@@ -475,12 +477,12 @@ async function singleRoundReport(
       p.submittedAt ? m.mcqMarks : null,
       m.fullyGraded ? m.practical : null,
       m.score ?? (p.submittedAt ? "Pending" : null),
-      m.score !== null ? Math.round((m.score / 60) * 1000) / 10 : null,
+      m.score !== null ? Math.round((m.score / m.maximum) * 1000) / 10 : null,
       !p.submittedAt
         ? "Not submitted"
         : m.fullyGraded
           ? "Final"
-          : p.selected.length !== 3
+          : p.selected.length === 0
             ? "No challenges selected before expiry"
             : "Pending practical evaluation",
       status,
@@ -537,7 +539,7 @@ async function singleRoundReport(
     ],
     [
       "Scoring",
-      "Three challenges x (4 MCQs x 3 marks = 12, plus practical evidence out of 8) = 60 marks.",
+      "Five challenges x (4 MCQs x 3 marks = 12, plus practical evidence out of 8) = 100 marks.",
     ],
     [
       "Practical rubric",
@@ -545,7 +547,7 @@ async function singleRoundReport(
     ],
     [
       "No-evidence policy",
-      "A selected challenge with no uploaded evidence receives 0 practical marks automatically at submission or expiry (graded by System).",
+      "An assigned challenge with no uploaded evidence receives 0 practical marks automatically at submission or expiry (graded by System).",
     ],
     [
       "Expiry policy",
@@ -554,7 +556,7 @@ async function singleRoundReport(
     ["READY", "Joined; attempt not yet started."],
     ["IN_PROGRESS", "Timer running; work not yet submitted."],
     ["AWAITING_EVALUATION", "Submitted; practical marks not yet complete."],
-    ["FINALIZED", "Submitted and all three practical evaluations recorded."],
+    ["FINALIZED", "Submitted and all five practical evaluations recorded."],
     ["EXPIRED", "Timer ended before submission; saved work was locked."],
     [
       "Pending",
