@@ -15,14 +15,30 @@ const versionOf = (etag: string) => {
   return m ? m[1] : null;
 };
 
+// DATABASE_URL, or POSTGRES_URL as set by the Vercel Supabase integration
+// (its pooled, serverless-safe connection). DATABASE_SSL=no-verify encrypts
+// the connection without checking the server certificate (libpq
+// "sslmode=require"), for providers whose pooler certificate is not publicly
+// trusted; the default verifies the certificate.
+export function databaseUrl() {
+  const raw = process.env.DATABASE_URL || process.env.POSTGRES_URL || "";
+  if (!raw || process.env.DATABASE_SSL !== "no-verify") return raw;
+  const url = new URL(raw);
+  url.searchParams.set("sslmode", "require");
+  url.searchParams.set("uselibpqcompat", "true");
+  return url.toString();
+}
+
 export class PostgresRecords {
   private pool: Pool;
   private ready?: Promise<void>;
-  constructor(config: string | PoolConfig = process.env.DATABASE_URL || "") {
+  constructor(config: string | PoolConfig = databaseUrl()) {
     const base: PoolConfig =
       typeof config === "string" ? { connectionString: config } : config;
     if (!base.connectionString && !base.host)
-      throw new Error("DATABASE_URL is required when RECORD_STORE=postgres");
+      throw new Error(
+        "DATABASE_URL (or POSTGRES_URL) is required when RECORD_STORE=postgres",
+      );
     this.pool = new Pool({
       max: Number(process.env.DATABASE_POOL_MAX || 5),
       connectionTimeoutMillis: 5000,
@@ -134,6 +150,11 @@ export class PostgresRecords {
       if (r.rows.length < pageSize) return;
       after = r.rows[r.rows.length - 1].key;
     }
+  }
+
+  /** One round trip to the database; throws 503 if it is unreachable. */
+  async ping() {
+    await this.query("SELECT 1", []);
   }
 
   async end() {
