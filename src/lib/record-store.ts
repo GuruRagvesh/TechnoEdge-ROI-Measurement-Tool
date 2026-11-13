@@ -82,6 +82,12 @@ export class PostgresRecords {
            updated_at timestamptz NOT NULL DEFAULT now()
          )`,
       );
+      // Hosted Postgres (Supabase) also publishes tables through its own web
+      // API. Row-level security with no policies closes that path; the app's
+      // own connection owns the table and is not affected.
+      await this.pool.query(
+        "ALTER TABLE app_records ENABLE ROW LEVEL SECURITY",
+      );
     } catch {
       this.ready = undefined;
       throw new AppError(
