@@ -1,15 +1,30 @@
 import { validateConfig } from "@/lib/config";
+import { HybridStorage, storage } from "@/lib/storage";
 export const dynamic = "force-dynamic";
-export function GET() {
+export async function GET() {
   try {
     validateConfig();
+    // With RECORD_STORE=postgres, also confirm the database answers. Only
+    // "ok" or "unavailable" is reported, never a connection detail.
+    let database: "ok" | "unavailable" | undefined;
+    const s = storage();
+    if (s instanceof HybridStorage)
+      database = await s.records.ping().then(
+        () => "ok" as const,
+        () => "unavailable" as const,
+      );
     return Response.json(
       {
-        status: "ok",
-        checks: "runtime-configuration-only",
+        status: database === "unavailable" ? "degraded" : "ok",
+        checks: database ? "configuration-and-database" : "runtime-configuration-only",
+        recordStore: database ? "postgres" : "sharepoint",
+        ...(database ? { database } : {}),
         liveIntegrationsVerified: false,
       },
-      { headers: { "Cache-Control": "no-store" } },
+      {
+        status: database === "unavailable" ? 503 : 200,
+        headers: { "Cache-Control": "no-store" },
+      },
     );
   } catch (e) {
     // Name the failing setting so operators can fix it. Only fixed messages

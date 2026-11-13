@@ -149,3 +149,26 @@ describe.skipIf(!DB)("PostgreSQL record store", () => {
     await down.end();
   });
 });
+
+describe("database connection settings", () => {
+  it("uses DATABASE_URL, else the POSTGRES_URL a Supabase integration sets", async () => {
+    const { databaseUrl } = await import("../src/lib/record-store");
+    vi.stubEnv("DATABASE_URL", "");
+    vi.stubEnv("POSTGRES_URL", "postgres://u:p@pooler.example:6543/postgres?sslmode=require");
+    vi.stubEnv("DATABASE_SSL", "");
+    expect(databaseUrl()).toBe("postgres://u:p@pooler.example:6543/postgres?sslmode=require");
+    vi.stubEnv("DATABASE_URL", "postgres://u:p@primary.example/db");
+    expect(databaseUrl()).toBe("postgres://u:p@primary.example/db");
+    vi.unstubAllEnvs();
+  });
+
+  it("only skips certificate checks when DATABASE_SSL=no-verify is set", async () => {
+    const { databaseUrl } = await import("../src/lib/record-store");
+    vi.stubEnv("DATABASE_URL", "postgres://u:p@pooler.example:6543/postgres?sslmode=require");
+    vi.stubEnv("DATABASE_SSL", "no-verify");
+    const url = new URL(databaseUrl());
+    expect(url.searchParams.get("sslmode")).toBe("require");
+    expect(url.searchParams.get("uselibpqcompat")).toBe("true");
+    vi.unstubAllEnvs();
+  });
+});
