@@ -21,10 +21,7 @@ export const TASK_LABEL: Record<TaskId, string> = {
 };
 
 export type AssessmentStatus =
-  | "Not started"
-  | "In progress"
-  | "Submitted"
-  | "Evaluated";
+  "Not started" | "In progress" | "Submitted" | "Evaluated";
 export type EvaluationStatus = "Not submitted" | "Pending" | "Finalized";
 
 export type ChallengeResult = {
@@ -105,7 +102,7 @@ export function card(
   const correct = submitted
     ? p.selected.reduce((n, t) => n + (p.mcq[t] || 0), 0)
     : null;
-  const per = m.maximum === 60 ? 3 : 1;
+  const per = p.scoringVersion === "legacy-100" ? 1 : 3;
   const challenges = p.selected.map((task) => {
     const g = p.grades[task];
     const practical = g ? g.completeness + g.accuracy + g.quality : null;
@@ -155,7 +152,7 @@ export function card(
           (Object.keys(p.taskCompletedAt).filter((t) =>
             p.selected.includes(t as TaskId),
           ).length /
-            3) *
+            p.selected.length) *
             100,
         )
       : 0,
@@ -191,7 +188,9 @@ export function cardsFor(data: RoomRecords[]): Card[] {
         : postRoom
           ? pairOf(
               p,
-              postRoom.participants.find((x) => x.identity.id === p.identity.id),
+              postRoom.participants.find(
+                (x) => x.identity.id === p.identity.id,
+              ),
             )
           : null;
       return card(room, p, pair);
@@ -214,9 +213,18 @@ export function summary(cards: Card[]) {
   ];
   const answered = submitted.reduce((n, c) => n + c.mcqAnswered, 0);
   const correct = submitted.reduce((n, c) => n + (c.mcqCorrect || 0), 0);
-  const status = (["Not started", "In progress", "Submitted", "Evaluated"] as const).map(
-    (label) => ({ label, count: cards.filter((c) => c.status === label).length }),
-  );
+  const recordedMaximums = cards
+    .map((c) => c.maximum)
+    .filter((value) => value > 0);
+  const maximum = recordedMaximums.length ? Math.max(...recordedMaximums) : 100;
+  const onSummaryScale = (value: number, card: Card) =>
+    (value / (card.maximum || maximum)) * maximum;
+  const status = (
+    ["Not started", "In progress", "Submitted", "Evaluated"] as const
+  ).map((label) => ({
+    label,
+    count: cards.filter((c) => c.status === label).length,
+  }));
   const challenges = TASK_ORDER.map((task) => {
     const rows = submitted
       .map((c) => c.challenges.find((x) => x.task === task))
@@ -239,7 +247,8 @@ export function summary(cards: Card[]) {
     submitted: submitted.length,
     finalized: finalized.length,
     pending: cards.filter((c) => c.evaluation === "Pending").length,
-    score: avg(finalized.map((c) => c.score!)),
+    maximum,
+    score: avg(finalized.map((c) => onSummaryScale(c.score!, c))),
     attempted: avg(started.map((c) => c.attempted)),
     minutes: avg(submitted.map((c) => c.minutes!).filter((x) => x !== null)),
     mcqAnswered: answered,
@@ -249,9 +258,9 @@ export function summary(cards: Card[]) {
     evidenceExpected: started.reduce((n, c) => n + c.evidenceExpected, 0),
     completion: avg(started.map((c) => c.completion)),
     pairs: uniquePairs.length,
-    pre: avg(uniquePairs.map((c) => c.pre!)),
-    post: avg(uniquePairs.map((c) => c.post!)),
-    improvement: avg(uniquePairs.map((c) => c.improvement!)),
+    pre: avg(uniquePairs.map((c) => onSummaryScale(c.pre!, c))),
+    post: avg(uniquePairs.map((c) => onSummaryScale(c.post!, c))),
+    improvement: avg(uniquePairs.map((c) => onSummaryScale(c.improvement!, c))),
     status,
     challenges,
   };

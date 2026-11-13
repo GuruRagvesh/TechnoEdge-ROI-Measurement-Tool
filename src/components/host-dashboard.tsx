@@ -1,7 +1,12 @@
 "use client";
 import { useMemo, useState } from "react";
 import Link from "next/link";
-import { AlertTriangle, Clock3, FileSpreadsheet, RefreshCw } from "lucide-react";
+import {
+  AlertTriangle,
+  Clock3,
+  FileSpreadsheet,
+  RefreshCw,
+} from "lucide-react";
 import { DownloadLink, Empty, ErrorBox } from "@/components/ui";
 import {
   cardsFor,
@@ -47,7 +52,9 @@ export function HostDashboard({
     [person, setPerson] = useState("all");
   const all = useMemo(() => cardsFor(data), [data]);
   const inRoom = all.filter((c) => roomId === "all" || c.roomId === roomId);
-  const filtered = inRoom.filter((c) => status === "all" || c.status === status);
+  const filtered = inRoom.filter(
+    (c) => status === "all" || c.status === status,
+  );
   const selected =
     person === "all"
       ? null
@@ -56,7 +63,13 @@ export function HostDashboard({
   const s = useMemo(() => summary(filtered), [filtered]);
   const stale = !!updated && !!error;
   if (!loaded && !error)
-    return <div className="sc-skeleton" aria-busy="true" aria-label="Loading dashboard" />;
+    return (
+      <div
+        className="sc-skeleton"
+        aria-busy="true"
+        aria-label="Loading dashboard"
+      />
+    );
   return (
     <div className="sc-root">
       <div className="sc-filters" role="group" aria-label="Dashboard filters">
@@ -121,7 +134,10 @@ export function HostDashboard({
             <RefreshCw size={14} /> Refresh
           </button>
           {roomId === "all" ? (
-            <Link className="button secondary compact" href="/host/reports/export">
+            <Link
+              className="button secondary compact"
+              href="/host/reports/export"
+            >
               <FileSpreadsheet size={14} /> Excel export
             </Link>
           ) : (
@@ -166,10 +182,15 @@ export function HostDashboard({
                   className="button primary compact"
                   href={`/host/rooms/${selected.roomId}/evaluate/${selected.participantId}`}
                 >
-                  {selected.evaluation === "Finalized" ? "View evaluation" : "Evaluate"}
+                  {selected.evaluation === "Finalized"
+                    ? "View evaluation"
+                    : "Evaluate"}
                 </Link>
               )}
-              <button className="button secondary compact" onClick={() => setPerson("all")}>
+              <button
+                className="button secondary compact"
+                onClick={() => setPerson("all")}
+              >
                 All participants
               </button>
             </div>
@@ -208,11 +229,17 @@ export function HostDashboard({
           />
           <SecondaryMetrics
             items={[
-              { label: "Assessment status", value: <StatusPill status={selected.status} /> },
-              { label: "Evaluation status", value: <StatusPill status={selected.evaluation} /> },
+              {
+                label: "Assessment status",
+                value: <StatusPill status={selected.status} />,
+              },
+              {
+                label: "Evaluation status",
+                value: <StatusPill status={selected.evaluation} />,
+              },
               {
                 label: "Evidence uploaded",
-                value: `${selected.evidenceReceived} of ${selected.evidenceExpected || 3}`,
+                value: `${selected.evidenceReceived} of ${selected.evidenceExpected}`,
                 detail: "Files verified by the server",
               },
               {
@@ -231,7 +258,7 @@ export function HostDashboard({
         <>
           <PrimaryMetrics
             score={s.score}
-            maximum={60}
+            maximum={s.maximum}
             scoreDetail={
               s.finalized
                 ? `Average of ${s.finalized} finalized assessment${s.finalized === 1 ? "" : "s"}`
@@ -256,6 +283,7 @@ export function HostDashboard({
             pre={s.pre}
             post={s.post}
             improvement={s.improvement}
+            maximum={s.maximum}
             detail={
               s.pairs
                 ? `Averages of ${s.pairs} matched participant${s.pairs === 1 ? "" : "s"}.`
@@ -275,7 +303,9 @@ export function HostDashboard({
               {
                 label: "Evaluation status",
                 value: `${s.finalized} finalized`,
-                detail: s.pending ? `${s.pending} pending evaluation` : "None pending",
+                detail: s.pending
+                  ? `${s.pending} pending evaluation`
+                  : "None pending",
               },
               {
                 label: "Evidence uploaded",
@@ -292,7 +322,9 @@ export function HostDashboard({
           <ChallengeAverages rows={s.challenges} />
           <section className="panel sc-table-panel" aria-labelledby="pt-title">
             <h2 id="pt-title">Participants</h2>
-            <p className="help">Select a name for that participant&apos;s full results.</p>
+            <p className="help">
+              Select a name for that participant&apos;s full results.
+            </p>
             <div className="sc-table-wrap">
               <table className="sc-table sc-people">
                 <thead>
@@ -300,7 +332,7 @@ export function HostDashboard({
                     <th>Participant</th>
                     {roomId === "all" && <th>Room</th>}
                     <th>Status</th>
-                    <th>Score /60</th>
+                    <th>Score</th>
                     <th>MCQ accuracy</th>
                     <th>Time</th>
                     <th>Evidence</th>
@@ -316,7 +348,9 @@ export function HostDashboard({
                       <td>
                         <button
                           className="sc-link"
-                          onClick={() => setPerson(c.roomId + "/" + c.participantId)}
+                          onClick={() =>
+                            setPerson(c.roomId + "/" + c.participantId)
+                          }
                         >
                           {c.name}
                         </button>
@@ -325,14 +359,42 @@ export function HostDashboard({
                       <td>
                         <StatusPill status={c.status} />
                       </td>
-                      <td>{c.score === null ? (c.submittedAt ? "Pending" : "—") : <b>{c.score}</b>}</td>
-                      <td>{c.accuracy === null ? "—" : `${fmt(c.accuracy)}%`}</td>
-                      <td>{c.minutes === null ? "—" : c.minutes < 1 ? "< 1 min" : `${fmt(c.minutes)} min`}</td>
-                      <td>{`${c.evidenceReceived}/${c.evidenceExpected || 3}`}</td>
+                      <td>
+                        {c.score === null ? (
+                          c.submittedAt ? (
+                            "Pending"
+                          ) : (
+                            "—"
+                          )
+                        ) : (
+                          <b>
+                            {c.score}/{c.maximum}
+                          </b>
+                        )}
+                      </td>
+                      <td>
+                        {c.accuracy === null ? "—" : `${fmt(c.accuracy)}%`}
+                      </td>
+                      <td>
+                        {c.minutes === null
+                          ? "—"
+                          : c.minutes < 1
+                            ? "< 1 min"
+                            : `${fmt(c.minutes)} min`}
+                      </td>
+                      <td>{`${c.evidenceReceived}/${c.evidenceExpected}`}</td>
                       <td>{fmt(c.completion, "%")}</td>
-                      <td>{c.evaluation === "Not submitted" ? "—" : <StatusPill status={c.evaluation} />}</td>
+                      <td>
+                        {c.evaluation === "Not submitted" ? (
+                          "—"
+                        ) : (
+                          <StatusPill status={c.evaluation} />
+                        )}
+                      </td>
                       <td className="sc-muted">
-                        {c.pre === null ? NA : `${c.pre} → ${c.post} (${c.improvement! > 0 ? "+" : ""}${c.improvement})`}
+                        {c.pre === null
+                          ? NA
+                          : `${c.pre} → ${c.post} (${c.improvement! > 0 ? "+" : ""}${c.improvement})`}
                       </td>
                       <td>
                         {c.evaluation === "Pending" && (

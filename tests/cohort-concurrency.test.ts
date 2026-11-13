@@ -11,7 +11,7 @@ it("persists 20 simultaneous participants through paired rounds, duplicate submi
     expect(r).toMatchObject({
       participants: 20,
       submittedAttempts: 40,
-      evidenceFiles: 120,
+      evidenceFiles: 200,
       eligiblePairs: 20,
       livePilot: false,
     });

@@ -7,11 +7,11 @@ import { answerKey, mark } from "../src/lib/challenges";
 import { excelReport } from "../src/lib/reports";
 import { materials } from "../src/lib/materials";
 import { MemoryStorage, attendee, host } from "./helpers";
-import type { Room, TaskId } from "../src/lib/types";
+import { TASK_IDS, type Room, type TaskId } from "../src/lib/types";
 
-describe("single-round release: one 60-minute attempt, three of five", () => {
+describe("single-round release: one 60-minute attempt, all five", () => {
   let store: MemoryStorage, service: AssessmentService, now: number;
-  const selected: TaskId[] = ["inbox", "tables", "mbr"];
+  const selected: TaskId[] = [...TASK_IDS];
   const other = {
     ...attendee,
     id: "person-b",
@@ -54,7 +54,7 @@ describe("single-round release: one 60-minute attempt, three of five", () => {
       phase: "pre",
       closed: false,
       durationMinutes: 60,
-      scoringVersion: "corporate-60-v1",
+      scoringVersion: "corporate-all5-v2",
     });
     expect(await service.rooms(attendee)).toEqual([]);
     await expect(
@@ -76,13 +76,9 @@ describe("single-round release: one 60-minute attempt, three of five", () => {
     const again = await service.join(room, attendee);
     expect(again.startedAt).toBe(first.startedAt);
     expect(again.deadline).toBe(first.deadline);
-    await expect(
-      service.start(room, attendee.id, ["inbox", "tables"] as TaskId[]),
-    ).rejects.toThrow("exactly three");
-    await service.start(room, attendee.id, selected);
-    await expect(
-      service.start(room, attendee.id, ["inbox", "tables", "clean"]),
-    ).rejects.toThrow("locked");
+    expect((await service.start(room, attendee.id, [])).selected).toEqual(
+      selected,
+    );
     now += 51 * 60000; // past the 60-minute deadline
     const expired = await service.participant(room, attendee.id);
     expect(expired?.submissionReason).toBe("deadline");
@@ -100,11 +96,11 @@ describe("single-round release: one 60-minute attempt, three of five", () => {
     ).rejects.toThrow("locked");
   });
 
-  it("scores 60, applies the no-evidence zero policy and exports the six required sheets", async () => {
+  it("scores 100, applies the no-evidence zero policy and exports the six required sheets", async () => {
     const p = await program(),
       room = p.preRoomId,
       key = answerKey("pre");
-    // Participant A: everything correct, evidence for all three, manual submit.
+    // Participant A: everything correct, evidence for all five, manual submit.
     await service.join(room, attendee);
     let a = await service.start(room, attendee.id, selected);
     for (const t of selected)
@@ -137,7 +133,7 @@ describe("single-round release: one 60-minute attempt, three of five", () => {
     a = await service.submit(room, attendee.id);
     expect(await service.submit(room, attendee.id)).toEqual(a); // double submit is a no-op
     expect(metrics(a)).toMatchObject({
-      mcqMarks: 36,
+      mcqMarks: 60,
       fullyGraded: false,
       score: null,
     });
@@ -228,22 +224,26 @@ describe("single-round release: one 60-minute attempt, three of five", () => {
       rowB = (rows: unknown[][]) => rows.filter((r) => r[0] === other.id);
     expect(rowA(people)[0][11]).toBe("FINALIZED");
     expect(rowB(people)[0][11]).toBe("EXPIRED");
-    expect(rowA(answers)).toHaveLength(12);
+    expect(rowA(answers)).toHaveLength(20);
     expect(rowA(answers).every((r) => r[9] === "Yes" && r[10] === 3)).toBe(
       true,
     );
     expect(rowB(answers)).toHaveLength(2); // only answered questions are listed
     expect(rowB(answers).map((r) => r[10])).toEqual([3, 0]);
-    expect(rowA(results).map((r) => r[6])).toEqual([20, 20, 20]);
+    expect(rowA(results).map((r) => r[6])).toEqual([20, 20, 20, 20, 20]);
     expect(rowB(results).map((r) => [r[4], r[5], r[6], r[10]])).toEqual([
       [3, 3, 6, "1 file(s) received"],
       [0, 0, 0, "No evidence submitted"],
       [0, 0, 0, "No evidence submitted"],
+      [0, 0, 0, "No evidence submitted"],
+      [0, 0, 0, "No evidence submitted"],
     ]);
-    expect(rowA(overall)[0].slice(4, 9)).toEqual([36, 24, 60, 100, "Final"]);
-    expect(rowB(overall)[0].slice(4, 9)).toEqual([3, 3, 6, 10, "Final"]);
+    expect(rowA(overall)[0].slice(4, 9)).toEqual([60, 40, 100, 100, "Final"]);
+    expect(rowB(overall)[0].slice(4, 9)).toEqual([3, 3, 6, 6, "Final"]);
     expect(rowA(log).map((r) => r[2])).toEqual([
       "Attempt started",
+      "Evidence upload confirmed",
+      "Evidence upload confirmed",
       "Evidence upload confirmed",
       "Evidence upload confirmed",
       "Evidence upload confirmed",
@@ -266,7 +266,7 @@ describe("single-round release: one 60-minute attempt, three of five", () => {
     await expect(service.attendees(p.preRoomId, attendee)).rejects.toThrow();
     const JSZip = (await import("jszip")).default;
     const zip = await JSZip.loadAsync(
-      await materials("inbox", "pre", "corporate-60-v1", true),
+      await materials("inbox", "pre", "corporate-all5-v2", true),
     );
     const readme = await zip.file("READ_ME.txt")!.async("string");
     expect(readme).toContain("One attempt per participant.");
@@ -274,7 +274,7 @@ describe("single-round release: one 60-minute attempt, three of five", () => {
   });
 });
 
-const selected: TaskId[] = ["inbox", "tables", "mbr"];
+const selected: TaskId[] = [...TASK_IDS];
 describe("balanced-v2 answer options", () => {
   const phases = ["pre", "post"] as const;
   it("keeps every correct value, with four distinct ascending options", () => {
@@ -351,7 +351,13 @@ describe("balanced-v2 answer options", () => {
     clock += 61 * 60000; // the deadline finalizes and marks the saved answers
     p = (await service.participant("legacy-room", attendee.id))!;
     expect(p.submissionReason).toBe("deadline");
-    expect(p.mcq).toEqual({ inbox: 4, tables: 4, mbr: 4 });
+    expect(p.mcq).toEqual({
+      inbox: 4,
+      tables: 4,
+      clean: 4,
+      dashboard: 4,
+      mbr: 4,
+    });
     expect(mark("pre", p.answers, selected, "sequential-v1")).toEqual(p.mcq);
   });
 });

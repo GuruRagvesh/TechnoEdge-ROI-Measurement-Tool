@@ -10,11 +10,13 @@ import JSZip from "jszip";
 import { answerKey } from "../src/lib/challenges";
 import type { Participant, TaskId } from "../src/lib/types";
 const origin = "http://127.0.0.1:3100";
-const tasks: TaskId[] = ["inbox", "tables", "clean"];
+const tasks: TaskId[] = ["inbox", "tables", "clean", "dashboard", "mbr"];
 const titles = [
   "Inbox Inferno",
   "The Hundred-Table Puzzle",
   "The Dirty Data Disaster",
+  "The Boardroom Dashboard",
+  "The MBR Deadline",
 ];
 const post = (ctx: APIRequestContext, route: string, data: unknown) =>
   ctx.post("/api/" + route, { headers: { Origin: origin }, data });
@@ -67,7 +69,7 @@ async function join(page: Page, room: string) {
   await expect(page).toHaveURL("/attendee/rooms/" + room);
 }
 async function finish(page: Page, phase: "pre" | "post") {
-  for (let t = 0; t < 3; t++) {
+  for (let t = 0; t < tasks.length; t++) {
     await page.getByRole("tab", { name: new RegExp(titles[t]) }).click();
     for (let i = 0; i < 4; i++)
       await page
@@ -75,14 +77,14 @@ async function finish(page: Page, phase: "pre" | "post") {
         .nth(i * 4 + answerKey(phase)[tasks[t]][i].correct)
         .check();
     // Completion stays unavailable until the server holds evidence.
-    await expect(page.getByLabel("Mark this challenge complete")).toBeDisabled();
-    await page
-      .getByLabel("Upload evidence")
-      .setInputFiles({
-        name: tasks[t] + "-result.csv",
-        mimeType: "text/csv",
-        buffer: Buffer.from("Result,Value\nVerified,100"),
-      });
+    await expect(
+      page.getByLabel("Mark this challenge complete"),
+    ).toBeDisabled();
+    await page.getByLabel("Upload evidence").setInputFiles({
+      name: tasks[t] + "-result.csv",
+      mimeType: "text/csv",
+      buffer: Buffer.from("Result,Value\nVerified,100"),
+    });
     await expect(
       page
         .locator(".evidence-file")
@@ -117,14 +119,20 @@ async function finish(page: Page, phase: "pre" | "post") {
   ).toBeVisible();
   await expect(page).toHaveURL(/\/attendee\/attempt\/[^/]+\/review$/);
   await page.reload();
-  await expect(page.getByRole("heading",{name:"Review before submission"})).toBeVisible();
+  await expect(
+    page.getByRole("heading", { name: "Review before submission" }),
+  ).toBeVisible();
   // The checklist is read from the saved server record.
   const review = page.getByRole("dialog");
-  await expect(review.getByText("Questions saved: 4 / 4")).toHaveCount(3);
-  await expect(review.getByText(/^✓ Marked complete$/)).toHaveCount(3);
-  for (let t = 0; t < 3; t++)
-    await expect(review.getByText(tasks[t] + "-result.csv", { exact: false })).toBeVisible();
-  await expect(page.getByRole("button", { name: "Submit & lock assessment" })).toBeEnabled();
+  await expect(review.getByText("Questions saved: 4 / 4")).toHaveCount(5);
+  await expect(review.getByText(/^✓ Marked complete$/)).toHaveCount(5);
+  for (let t = 0; t < tasks.length; t++)
+    await expect(
+      review.getByText(tasks[t] + "-result.csv", { exact: false }),
+    ).toBeVisible();
+  await expect(
+    page.getByRole("button", { name: "Submit & lock assessment" }),
+  ).toBeEnabled();
   await page.getByRole("button", { name: "Submit & lock assessment" }).click();
   await expect(
     page.getByRole("heading", { name: "Submission received" }),
@@ -206,7 +214,7 @@ test("corporate journey: host OTP, paired creation, confirmed join, reload/outag
   await page.goto("/attendee/join?code=" + program.preRoomId);
   await page.getByRole("button", { name: "Validate room" }).click();
   await expect(
-    page.getByText("Selection time is included.", { exact: false }),
+    page.getByText("All five practical challenges are assigned automatically."),
   ).toBeVisible();
   expect(
     (await page.request.get("/api/rooms/" + program.preRoomId)).status(),
@@ -219,23 +227,16 @@ test("corporate journey: host OTP, paired creation, confirmed join, reload/outag
   const initial: Participant = (
     await (await page.request.get("/api/rooms/" + program.preRoomId)).json()
   ).participant;
-  expect(initial.selected).toEqual([]);
+  expect(initial.selected).toEqual(tasks);
   expect(initial.startedAt).toBeTruthy();
   await page.reload();
-  await expect(
-    page.getByRole("heading", { name: "Choose your three challenges." }),
-  ).toBeVisible();
+  await expect(page.getByRole("tab")).toHaveCount(5);
   const duplicate = await post(
     page.request,
     `rooms/${program.preRoomId}/join`,
     {},
   );
   expect((await duplicate.json()).participant.deadline).toBe(initial.deadline);
-  for (const title of titles)
-    await page.getByRole("button", { name: new RegExp(title) }).click();
-  await page
-    .getByRole("button", { name: "Confirm selected challenges" })
-    .click();
   await expect(page.getByRole("tab").first()).toBeVisible();
   await expect(
     page.getByRole("heading", { name: "Inbox Inferno", exact: true }),
@@ -270,7 +271,7 @@ test("corporate journey: host OTP, paired creation, confirmed join, reload/outag
   await page.getByRole("button", { name: "Retry saving now" }).click();
   await expect(page.locator(".save-status")).toContainText("All changes saved");
   await finish(page, "pre");
-  await expect(page.getByText("36 / 36", { exact: true })).toBeVisible();
+  await expect(page.getByText("60 / 60", { exact: true })).toBeVisible();
   expect(
     (await post(page.request, `rooms/${program.preRoomId}/join`, {})).status(),
   ).toBe(409);
@@ -281,7 +282,7 @@ test("corporate journey: host OTP, paired creation, confirmed join, reload/outag
   ).toBe(200);
   await grade(hp, program.preRoomId, initial.identity.id);
   await page.reload();
-  await expect(page.getByText("60 / 60", { exact: true })).toBeVisible();
+  await expect(page.getByText("100 / 100", { exact: true })).toBeVisible();
   await page.goto("/attendee/join?code=" + program.postRoomId);
   await page.getByRole("button", { name: "Validate room" }).click();
   await expect(page.locator(".error")).toContainText("closed");
@@ -291,15 +292,7 @@ test("corporate journey: host OTP, paired creation, confirmed join, reload/outag
     hp.getByRole("button", { name: "Open room", exact: true }),
   ).toHaveCount(0);
   await join(page, program.postRoomId);
-  await expect(
-    page.getByRole("heading", {
-      name: "The same skills. A different dataset.",
-    }),
-  ).toBeVisible();
-  await page
-    .getByRole("button", { name: "Confirm selected challenges" })
-    .click();
-  await expect(page.getByRole("tab").first()).toBeVisible();
+  await expect(page.getByRole("tab")).toHaveCount(5);
   const postAttempt: Participant = (
     await (await page.request.get("/api/rooms/" + program.postRoomId)).json()
   ).participant;
@@ -319,12 +312,14 @@ test("corporate journey: host OTP, paired creation, confirmed join, reload/outag
   ).toBeVisible();
   await expect(page.locator(".comparison-charts figure")).toHaveCount(4);
   // The scorecard's Pre/Post area shows the genuine matched marks.
-  await expect(page.locator(".sc-pp-figures dd").nth(0)).toContainText("/ 60");
-  await expect(page.locator(".sc-pp-figures dd").nth(1)).toContainText("/ 60");
-  await expect(page.locator(".sc-pp-figures")).not.toContainText("Not available");
+  await expect(page.locator(".sc-pp-figures dd").nth(0)).toContainText("/ 100");
+  await expect(page.locator(".sc-pp-figures dd").nth(1)).toContainText("/ 100");
+  await expect(page.locator(".sc-pp-figures")).not.toContainText(
+    "Not available",
+  );
   await hp.goto(`/host/rooms/${program.postRoomId}/monitor`);
   await expect(
-    hp.getByRole("cell",{name:"Finalized",exact:true}),
+    hp.getByRole("cell", { name: "Finalized", exact: true }),
   ).toBeVisible();
   await mobile(hp, "corporate-monitor");
   await hp.goto("/host/reports");
@@ -339,9 +334,9 @@ test("corporate journey: host OTP, paired creation, confirmed join, reload/outag
   const wb = new ExcelJS.Workbook();
   await wb.xlsx.load((await readFile((await (await report).path())!)) as never);
   expect(wb.getWorksheet("Participants")!.getCell("T2").value).toBe(
-    "corporate-60-v1",
+    "corporate-all5-v2",
   );
-  expect(wb.getWorksheet("Participants")!.getCell("U2").value).toBe(60);
+  expect(wb.getWorksheet("Participants")!.getCell("U2").value).toBe(100);
   const zip = hp.waitForEvent("download");
   await hp.getByRole("button", { name: "Download evidence ZIP" }).click();
   const archive = await JSZip.loadAsync(
@@ -349,7 +344,7 @@ test("corporate journey: host OTP, paired creation, confirmed join, reload/outag
   );
   expect(
     JSON.parse(await archive.file("manifest.json")!.async("string")).files,
-  ).toHaveLength(3);
+  ).toHaveLength(5);
   expect(errors).toEqual([]);
   await hc.close();
 });

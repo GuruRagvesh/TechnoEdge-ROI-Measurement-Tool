@@ -387,8 +387,8 @@ export default function Host() {
                   ? "60 minutes, one attempt per participant"
                   : "60 minutes per round"}
               </li>
-              <li>Five validated practical challenges; three required</li>
-              <li>60 marks: 36 MCQ + 24 practical</li>
+              <li>All five validated practical challenges required</li>
+              <li>100 marks: 60 MCQ + 40 practical</li>
               {!single && (
                 <li>Matched categories across different Pre/Post datasets</li>
               )}
@@ -798,7 +798,7 @@ export default function Host() {
                 <p>
                   Correct MCQs: {review.mcq[task] || 0}/4 · awarded{" "}
                   {(review.mcq[task] || 0) *
-                    (review.scoringVersion === "corporate-60-v1" ? 3 : 1)}{" "}
+                    (review.scoringVersion !== "legacy-100" ? 3 : 1)}{" "}
                   MCQ marks
                 </p>
                 {review.evidence
@@ -823,19 +823,18 @@ export default function Host() {
               <form onSubmit={saveGrade}>
                 <h3>
                   Practical evaluation ·{" "}
-                  {review.scoringVersion === "corporate-60-v1" ? 8 : 15} marks
+                  {review.scoringVersion !== "legacy-100" ? 8 : 15} marks
                 </h3>
                 {(["completeness", "accuracy", "quality"] as const).map((k) => {
                   const max =
-                    review.scoringVersion === "corporate-60-v1"
+                    review.scoringVersion !== "legacy-100"
                       ? k === "quality"
                         ? 2
                         : 3
                       : 5;
                   return (
                     <label key={k}>
-                      {k === "quality" &&
-                      review.scoringVersion === "corporate-60-v1"
+                      {k === "quality" && review.scoringVersion !== "legacy-100"
                         ? "Presentation"
                         : k}{" "}
                       /{max}

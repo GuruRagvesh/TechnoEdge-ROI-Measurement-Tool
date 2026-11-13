@@ -7,11 +7,11 @@ import {
 } from "../src/lib/assessment";
 import { answerKey, mark, publicTasks } from "../src/lib/challenges";
 import { getJson, mutate } from "../src/lib/storage";
-import type { Participant, TaskId } from "../src/lib/types";
+import { TASK_IDS, type Participant, type TaskId } from "../src/lib/types";
 import { MemoryStorage, attendee, host } from "./helpers";
 describe("durable assessment lifecycle", () => {
   let store: MemoryStorage, service: AssessmentService, now: number;
-  const selected: TaskId[] = ["inbox", "tables", "clean"];
+  const selected: TaskId[] = [...TASK_IDS];
   beforeEach(async () => {
     store = new MemoryStorage();
     now = Date.parse("2026-11-05T09:00:00Z");
@@ -48,33 +48,16 @@ describe("durable assessment lifecycle", () => {
     });
     return p;
   }
-  it("requires exactly three tasks and locks selection; start is resumable", async () => {
-    await expect(
-      service.start("ai-productivity-pre", attendee.id, [
-        "inbox",
-        "inbox",
-        "clean",
-      ]),
-    ).rejects.toThrow("three");
-    const first = await service.start(
-      "ai-productivity-pre",
-      attendee.id,
-      selected,
-    );
+  it("assigns all five challenges automatically; start is resumable", async () => {
+    const first = await service.start("ai-productivity-pre", attendee.id, []);
+    expect(first.selected).toEqual(selected);
     now += 10000;
     const resumed = await new AssessmentService(store, () => now).start(
       "ai-productivity-pre",
       attendee.id,
-      selected,
+      [],
     );
     expect(resumed.deadline).toBe(first.deadline);
-    await expect(
-      service.start("ai-productivity-pre", attendee.id, [
-        "inbox",
-        "dashboard",
-        "mbr",
-      ]),
-    ).rejects.toThrow("locked");
   });
   it("recovers saved work in a new service and prevents stale-tab overwrites", async () => {
     let p = await service.start("ai-productivity-pre", attendee.id, selected);
@@ -110,7 +93,7 @@ describe("durable assessment lifecycle", () => {
       service.submit("ai-productivity-pre", attendee.id),
     ]);
     expect(result[0].submittedAt).toBe(result[1].submittedAt);
-    expect(metrics(result[0]).mcq).toBe(12);
+    expect(metrics(result[0]).mcq).toBe(20);
     expect(metrics(result[0]).score).toBeNull();
     await expect(
       service.upload(
@@ -169,7 +152,7 @@ describe("durable assessment lifecycle", () => {
     ).rejects.toThrow("evidence");
     await expect(
       service.submit("ai-productivity-pre", attendee.id),
-    ).rejects.toThrow("Complete all three");
+    ).rejects.toThrow("Complete all five");
   });
   it("enforces room ownership, closed rooms and grading only submitted work", async () => {
     const room = await service.createRoom(host, {
@@ -291,6 +274,8 @@ describe("durable assessment lifecycle", () => {
       inbox: 0,
       tables: 0,
       clean: 0,
+      dashboard: 0,
+      mbr: 0,
     });
   });
   it("excludes incomplete submissions from observed improvement and ROI", async () => {

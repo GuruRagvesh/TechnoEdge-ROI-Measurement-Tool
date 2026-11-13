@@ -168,7 +168,7 @@ export default function Attendee() {
                 : "Your assessment journey."}
             </h2>
             <p>
-              Three practical challenges. One hour. Real evidence of how you
+              Five practical challenges. One hour. Real evidence of how you
               work.
               {single &&
                 " Once you start, the attempt cannot be paused or restarted."}
@@ -361,7 +361,7 @@ export default function Attendee() {
               </p>
               <p>
                 {room.mode === "single"
-                  ? "Three of five practical challenges · one attempt"
+                  ? "All five practical challenges · one attempt"
                   : room.batch +
                     " · " +
                     (room.phase === "pre"
@@ -382,10 +382,16 @@ export default function Attendee() {
                         ? "Ready to start"
                         : "Not started"}
                 </span>
-                <strong>{m?.completed || 0} / 3 tasks</strong>
+                <strong>
+                  {m?.completed || 0} / {p?.selected.length || 5} tasks
+                </strong>
               </div>
               <div className="progress-track">
-                <i style={{ width: `${((m?.completed || 0) / 3) * 100}%` }} />
+                <i
+                  style={{
+                    width: `${((m?.completed || 0) / (p?.selected.length || 5)) * 100}%`,
+                  }}
+                />
               </div>
               <div className="card-bottom">
                 <span>

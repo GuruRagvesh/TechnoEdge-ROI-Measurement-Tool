@@ -15,10 +15,15 @@ import { answerKey } from "../src/lib/challenges";
 import { getJson, mutate, LocalStorage } from "../src/lib/storage";
 import { excelReport } from "../src/lib/reports";
 import { MemoryStorage, attendee, host } from "./helpers";
-import type { Participant, Room, TaskId } from "../src/lib/types";
+import {
+  TASK_IDS,
+  type Participant,
+  type Room,
+  type TaskId,
+} from "../src/lib/types";
 describe("corporate programs and versioned attempts", () => {
   let store: MemoryStorage, service: AssessmentService, now: number;
-  const selected: TaskId[] = ["inbox", "tables", "clean"];
+  const selected: TaskId[] = [...TASK_IDS];
   beforeEach(async () => {
     store = new MemoryStorage();
     now = Date.parse("2026-11-06T09:00:00Z");
@@ -83,7 +88,7 @@ describe("corporate programs and versioned attempts", () => {
       closed: false,
       phase: "pre",
       durationMinutes: 60,
-      scoringVersion: "corporate-60-v1",
+      scoringVersion: "corporate-all5-v2",
     });
     expect(post).toMatchObject({
       closed: true,
@@ -119,7 +124,7 @@ describe("corporate programs and versioned attempts", () => {
       (await service.rooms(host)).filter((r) => r.programId === p.id),
     ).toHaveLength(2);
   });
-  it("validation never starts the timer; confirmed joins start it once before task selection", async () => {
+  it("validation never starts the timer; confirmed joins assign all five once", async () => {
     const p = await program();
     await service.validateJoin(p.preRoomId, attendee);
     expect(await service.participant(p.preRoomId, attendee.id)).toBeNull();
@@ -128,7 +133,7 @@ describe("corporate programs and versioned attempts", () => {
       service.join(p.preRoomId, attendee),
     ]);
     expect(a.deadline).toBe(b.deadline);
-    expect(a.selected).toEqual([]);
+    expect(a.selected).toEqual(selected);
     now += 60000;
     const resumed = await new AssessmentService(store, () => now).join(
       p.preRoomId,
@@ -138,7 +143,7 @@ describe("corporate programs and versioned attempts", () => {
     const started = await service.start(p.preRoomId, attendee.id, selected);
     expect(started.deadline).toBe(a.deadline);
   });
-  it("expires during task selection and rejects joins, starts and writes after expiry", async () => {
+  it("expires during the assessment and rejects joins, starts and writes after expiry", async () => {
     const p = await program(),
       a = await service.join(p.preRoomId, attendee);
     now = Date.parse(a.deadline!);
@@ -194,14 +199,14 @@ describe("corporate programs and versioned attempts", () => {
       code: "PRE_REQUIRED",
     });
   });
-  it("marks out of 60, validates the 8-mark rubric, locks submissions, and matches Summit categories", async () => {
+  it("marks out of 100, validates the 8-mark rubric, locks submissions, and matches Summit categories", async () => {
     const p = await program();
     const pre = await complete(p.preRoomId, "pre");
     expect(metrics(pre)).toMatchObject({
-      score: 60,
-      maximum: 60,
-      mcqMarks: 36,
-      practical: 24,
+      score: 100,
+      maximum: 100,
+      mcqMarks: 60,
+      practical: 40,
       quality: 100,
     });
     await expect(
@@ -269,7 +274,7 @@ describe("corporate programs and versioned attempts", () => {
       maximum: 100,
       scoringVersion: "legacy-100",
     });
-    expect(metrics(pre).score).toBe(60);
+    expect(metrics(pre).score).toBe(100);
     expect(comparison(historic, pre).comparable).toBe(false);
   });
   it("persists confirmed deadlines across actual storage and service restarts", async () => {

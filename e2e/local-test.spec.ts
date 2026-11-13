@@ -71,7 +71,7 @@ test("test accounts are isolated, must follow assessment rules, and reset is CLI
   });
   r = await page.request.post("/api/rooms/ai-productivity-pre/start", {
     headers: { Origin: origin },
-    data: { selected: ["dashboard", "mbr", "clean"] },
+    data: { selected: ["inbox", "tables", "clean", "dashboard", "mbr"] },
   });
   expect(r.status()).toBe(200);
   expect(
@@ -93,10 +93,12 @@ test("test accounts are isolated, must follow assessment rules, and reset is CLI
     },
   });
   await page.goto("/attendee/rooms/ai-productivity-pre");
+  await page.getByRole("tab", { name: /The Boardroom Dashboard/ }).click();
   await expect(page.getByLabel("Method notes")).toHaveValue(
     "Persistent dashboard notes",
   );
   await page.reload();
+  await page.getByRole("tab", { name: /The Boardroom Dashboard/ }).click();
   await expect(page.getByLabel("Method notes")).toHaveValue(
     "Persistent dashboard notes",
   );

@@ -48,7 +48,7 @@ export class AssessmentService {
   }
   private createDefaultRoom() {
     return createJson<Room>(this.store, roomKey("ai-productivity-pre"), {
-      scoringVersion: "corporate-60-v1",
+      scoringVersion: "corporate-all5-v2",
       optionLayout: CURRENT_OPTION_LAYOUT,
       id: "ai-productivity-pre",
       name: "AI Productivity Benchmark",
@@ -178,7 +178,7 @@ export class AssessmentService {
         batch: cohort,
         createdAt: program.createdAt,
         closed: phase === "post",
-        scoringVersion: "corporate-60-v1",
+        scoringVersion: "corporate-all5-v2",
         optionLayout: CURRENT_OPTION_LAYOUT,
         ...(phase === "post" ? { preRoomId: program.preRoomId } : {}),
         ...(host.testAccount
@@ -238,8 +238,8 @@ export class AssessmentService {
       const pre = await this.participant(room.preRoomId!, identity.id);
       if (
         !pre?.submittedAt ||
-        pre.selected.length !== 3 ||
-        Object.keys(pre.taskCompletedAt).length !== 3
+        pre.selected.length === 0 ||
+        Object.keys(pre.taskCompletedAt).length !== pre.selected.length
       )
         throw new AppError(
           409,
@@ -291,11 +291,15 @@ export class AssessmentService {
     if (identity.role !== "attendee")
       throw new AppError(403, "Attendee access required.");
     const room = await this.validateJoin(roomId, identity);
+    const assigned =
+      room.phase === "post"
+        ? [...(await this.participant(room.preRoomId!, identity.id))!.selected]
+        : [...TASK_IDS];
     const record: Participant = {
       identity,
       roomId,
       scoringVersion: room.scoringVersion || "legacy-100",
-      selected: [],
+      selected: assigned,
       answers: {},
       notes: {},
       evidence: [],
@@ -418,25 +422,29 @@ export class AssessmentService {
       },
     );
   }
-  async start(roomId: string, id: string, selected: TaskId[]) {
+  async start(roomId: string, id: string, _selected: TaskId[] = []) {
     const room = await this.room(roomId);
-    let tasks = selected;
+    let tasks: TaskId[] = [...TASK_IDS];
     if (room.phase === "post") {
       const pre = await this.participant(room.preRoomId!, id);
-      if (!pre?.submittedAt || pre.selected.length !== 3)
+      if (!pre?.submittedAt || pre.selected.length === 0)
         throw new AppError(409, "A completed Pre-AI assessment is required.");
       tasks = pre.selected;
     }
     if (
-      tasks.length !== 3 ||
-      new Set(tasks).size !== 3 ||
+      tasks.length === 0 ||
+      (room.phase === "pre" && tasks.length !== TASK_IDS.length) ||
+      new Set(tasks).size !== tasks.length ||
       tasks.some((x) => !TASK_IDS.includes(x))
     )
-      throw new AppError(400, "Choose exactly three different challenges.");
+      throw new AppError(400, "All five challenges are required.");
     return this.edit(roomId, id, (p) => {
-      if (p.selected.length === 3) {
+      if (p.selected.length > 0) {
         if (JSON.stringify(p.selected) !== JSON.stringify(tasks))
-          throw new AppError(409, "Task selection is locked after starting.");
+          throw new AppError(
+            409,
+            "Assigned challenges are locked after starting.",
+          );
         return p;
       }
       return {
@@ -474,7 +482,7 @@ export class AssessmentService {
           ...input.completed,
         ].some((x) => !p.selected.includes(x as TaskId))
       )
-        throw new AppError(400, "Only selected tasks may be changed.");
+        throw new AppError(400, "Only assigned challenges may be changed.");
       const complete: Participant["taskCompletedAt"] = {};
       for (const task of input.completed) {
         if (
@@ -518,12 +526,12 @@ export class AssessmentService {
       if (p.deadline && Date.parse(p.deadline) <= this.clock())
         return this.finalize(room, p, "deadline");
       if (
-        p.selected.length !== 3 ||
+        p.selected.length === 0 ||
         p.selected.some((x) => !p.taskCompletedAt[x])
       )
         throw new AppError(
           400,
-          "Complete all three selected challenges before submitting.",
+          "Complete all five challenges before submitting.",
         );
       return this.finalize(room, p, "manual");
     });
@@ -682,7 +690,8 @@ export class AssessmentService {
           "This evaluation changed. Close and reopen it before saving.",
         );
       const limits =
-        p.scoringVersion === "corporate-60-v1"
+        p.scoringVersion === "corporate-60-v1" ||
+        p.scoringVersion === "corporate-all5-v2"
           ? { quality: 2, accuracy: 3, completeness: 3 }
           : { quality: 5, accuracy: 5, completeness: 5 };
       for (const k of ["quality", "accuracy", "completeness"] as const)
