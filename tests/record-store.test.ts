@@ -113,7 +113,7 @@ describe.skipIf(!DB)("PostgreSQL record store", () => {
     expect(await getJson(g, "config/host-allowlist.json")).toEqual({ emails: ["h@x.example"] });
   });
 
-  it("carries over records written to SharePoint before the switch, except sign-in records", async () => {
+  it("carries over records written to SharePoint before the switch, sessions included", async () => {
     const r = room();
     const sp = new GraphStorage(simFetch);
     await sp.write(`rooms/${r}/participants/old.json`, Buffer.from('{"answers":{"a":[2]}}'), null);
@@ -130,7 +130,7 @@ describe.skipIf(!DB)("PostgreSQL record store", () => {
     await sp.write(fresh, Buffer.from('{"keep":true}'), null);
     await expect(g.write(fresh, Buffer.from('{"keep":false}'), null)).rejects.toBeInstanceOf(Conflict);
     expect(await getJson(g, fresh)).toEqual({ keep: true });
-    expect(await getJson(g, `auth/sessions/${r}.json`)).toBeNull();
+    expect(await getJson(g, `auth/sessions/${r}.json`)).toEqual({ s: 1 });
   });
 
   it("copies each submitted result to SharePoint and keeps unsubmitted work in PostgreSQL only", async () => {
